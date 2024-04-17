@@ -203,17 +203,27 @@ function build_nsbs(D, π, oparams, ϕ, τ; nboot_train=200, nboot_test=500, δ=
     return opt_fun, bound_fun
 end
 
-function build_nsbst(D, π, oparams, ϕ, τ; nboot_train=200, nboot_test=500, δ=0.05, λ=0.01, IS=PerDecisionImportanceSampling(), old_ent=false, num_iters=100, rng=Base.GLOBAL_RNG)
+
+function build_nsbst(
+    D, 
+    π, 
+    oparams, 
+    ϕ, 
+    τ; 
+    nboot_train=200, 
+    nboot_test=500, 
+    δ=0.05, 
+    λ=0.01, 
+    IS=PerDecisionImportanceSampling(), 
+    old_ent=false, 
+    num_iters=100, 
+    rng=Base.GLOBAL_RNG
+)
     opt_fun(oparams, π, D, idxs) = maximize_nsbs_lower!(oparams, π, D, idxs, ϕ, τ, nboot_train, δ, mean, λ, IS, old_ent, num_iters, rng)
     bound_fun(D, idxs, π, δ, tail) = nswildbst_CI(π, δ, tail, D, idxs, ϕ, τ, nboot_test, IS, rng)
     return opt_fun, bound_fun
 end
 
-function build_ns_testbs(D, π, oparams, ϕ, τ; nboot_train=200, nboot_test=500, δ=0.05, λ=0.01, IS=PerDecisionImportanceSampling(), old_ent=false, num_iters=100, rng=Base.GLOBAL_RNG)
-    opt_fun(oparams, π, D, idxs) = maximize_ns_lower!(oparams, π, D, idxs, ϕ, τ, nboot_train, δ, mean, λ, IS, old_ent, num_iters, rng)
-    bound_fun(D, idxs, π, δ, tail) = nswildbst_CI(π, δ, tail, D, idxs, ϕ, τ, nboot_test, IS, rng)
-    return opt_fun, bound_fun
-end
 
 function off_policy_natgrad!(G, θ, Y, GY, ψ, F, π, D::BanditHistory{T,TA}, idxs, A, B, δ, num_boot, aggf, λ, IS::TI, rng) where {T,TA,TI<:UnweightedIS}
     set_params!(π, θ)

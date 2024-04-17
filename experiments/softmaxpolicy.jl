@@ -24,7 +24,11 @@ mutable struct StatelessSoftmaxPolicy{TP} <: AbstractPolicy where {TP}
     θ::Array{TP}
     action::Int
     probs::Array{TP,1}
+
+    # The where clause indicates the input type is generic
     function StatelessSoftmaxPolicy(::Type{T}, num_actions::Int) where {T}
+        # Create the arrays that are used to initialize the theta and the p
+        # fields with the same size as the number of actions
         θ = zeros(T, num_actions)
         p = zeros(T, num_actions)
         new{T}(θ, 0, p)
@@ -80,6 +84,9 @@ function get_action_gradient_logp!(grad, π::StatelessSoftmaxPolicy, rng)
 end
 
 function set_params!(π::StatelessSoftmaxPolicy{T}, θ) where {T}
+    # The @. macro is used to broadcast the operation to all elements of the array;
+    # this is equivalent to π.μ = θ, but it is more efficient.
+    # Set the theta field of the policy to the value of the parameter θ
     @. π.θ = θ
     get_action_probabilities!(π::StatelessSoftmaxPolicy)
 end

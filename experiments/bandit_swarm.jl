@@ -17,7 +17,7 @@ include("environments.jl")
 include("nonstationary_modeling.jl")
 include("nonstationary_pi.jl")
 
-struct SafetyPerfRecord{T1, T2} <: Any where {T1, T2}
+struct SafetyPerfRecord{T1, T2} <: Any where {T1,T2}
     t::Array{T1,1}
     Jpi::Array{T2,1}
     Jsafe::Array{T2,1}
@@ -69,12 +69,23 @@ function record_perf!(rec::SafetyPerfRecord, eval_fn, t, πc, πsafe)
     push!(rec.Jsafe, eval_fn(πsafe))
 end
 
-function optimize_nsdbandit_safety(num_episodes, rng, speed, hyperparams, fpath, save_res)
+function optimize_nsdbandit_safety(
+    num_episodes, 
+    rng, 
+    speed, 
+    hyperparams, 
+    fpath, 
+    save_res
+)
+    # Create a new BanditHistory object to store the history of the bandit problem
     D = BanditHistory(Float64, Int)
+    # Set the payoffs for the arms of the bandit problem
     arm_payoffs = [1.0, 0.8, 0.6, 0.4, 0.2]
+    # Set the array of frequencies for the arms of the bandit problem
     arm_freq = zeros(length(arm_payoffs))
+    # If the non-stationarity speed is 0 (stationary environment)
     if speed == 0
-        κ = 0#(2*pi)/1500.0
+        κ = 0 #(2*pi)/1500.0
     elseif speed == 1
         κ = (2*pi)/2000.0
     elseif speed == 2
@@ -85,43 +96,60 @@ function optimize_nsdbandit_safety(num_episodes, rng, speed, hyperparams, fpath,
         println("speed $speed not recognized")
         return nothing
     end
+    # Assign the frequency of the arms to the value stored in κ for each value in the array
     arm_freq .= κ
+    # Create a new arm_k array, uninitialized, with the same length as the arm_freq array
     arm_k = similar(arm_freq)
+    # Assign to each element of arm_k the value of pi/2
     arm_k .= pi/2
+    # Multiply the 2*pi/5 to each element of the left-hand side array, then sum each element into the arm_k array
     arm_k .+= (2*pi/5) .* [0.0, 1.0, 2.0, 3.0, 4.0]
+    # Create a new array of ones with the same length as the arm_payoffs array
+    # that represents the Rademacher variable probabilities
     arm_sigma = ones(length(arm_payoffs))
     arm_sigma .*= 0.05
 
-    env = NonStationaryDiscreteBanditParams(arm_payoffs, arm_sigma, arm_freq, arm_k, [0.0])
+    # Create a new NonStationaryDiscreteBanditParams object with the arm_payoffs, arm_sigma, arm_freq, and arm_k arrays
+    env = NonStationaryDiscreteBanditParams(
+        arm_payoffs, 
+        arm_sigma, 
+        arm_freq, 
+        arm_k, 
+        [0.0]
+    )
 
-    θ = deepcopy(arm_payoffs) .* 0.4
-    θ .= [2.0, 1.5, 1.2, 1.0, 1.0]
+    # TODO this seems to be useless because the values are statically reassigned
+    # θ = deepcopy(arm_payoffs) .* 0.4
 
+    # Set the theta values (payoffs?) for each arm
+    θ = [2.0, 1.5, 1.2, 1.0, 1.0]
+
+    # Create a new policy pi to choose among the arm_payoffs
     π = StatelessSoftmaxPolicy(Float64, length(arm_payoffs))
     set_params!(π, θ)
+    # Clone the built policy and assign it to πsafe
     πsafe = clone(π)
 
-
+    # ===========================================================
+    # Define a function with a short function definition syntax.
     env_fn(action, rng) = sample_reward!(env, action, rng)
+    # ===========================================================
+    
     sample_counter = [0]
     rec = SafetyPerfRecord(Int, Float64)
     eval_fn(π) = eval_policy(env, π)
+    # ===========================================================
     function log_eval(action, rng, sample_counter, rec, eval_fn, π, πsafe)
         sample_counter[1] += 1
         record_perf!(rec, eval_fn, sample_counter[1], π, πsafe)
         return env_fn(action, rng)
     end
+    # ===========================================================
     log_fn = (action, rng) -> log_eval(action, rng, sample_counter, rec, eval_fn, π, πsafe)
     # sample_fn(D, π, N) = collect_data!(D, π, env_fn, N, rng)
     sample_fn(D, π, N) = collect_data!(D, π, log_fn, N, rng)
 
-    iteration_counter = [0]
-    # function sample_print(D, π, N)
-        # sample_fn(D, π, N)
-        # iteration_counter[1] += 1
-        # println("iteration $(iteration_counter[1]), reward: $(mean(D.rewards[end-N+1:end])) policy: $(get_params(π))")
-    # end
-
+    # Set the parameters for the optimization algorithm (Adam)
     oparams = AdamParams(get_params(π), 1e-2; β1=0.9, β2=0.999, ϵ=1e-5)
 
     τ, λ, opt_ratio, fborder = hyperparams
@@ -138,8 +166,11 @@ function optimize_nsdbandit_safety(num_episodes, rng, speed, hyperparams, fpath,
     num_opt_iters = round(Int, τ*opt_ratio)
     warmup_steps = 20
     sm = SplitLastKKeepTest(0.25)  # Fraction of data samples to be used for training
-    fb = fourierseries(Float64, fborder)
+    # Assign the normalization function to nt
     nt = normalize_time(D, τ)
+    # Create a Fourier series with the fborder value
+    fb = fourierseries(Float64, fborder)
+    # Apply a Fourier series to the normalized time
     ϕ(t) = fb(nt(t))
 
     num_iters = num_episodes / τ
@@ -149,9 +180,38 @@ function optimize_nsdbandit_safety(num_episodes, rng, speed, hyperparams, fpath,
     test_idxs = Array{Int, 1}()
 
     # opt_fun, safety_fun = build_nsbs(D, π, oparams, ϕ, τ; nboot_train=nboot_train, nboot_test=nboot_test, δ=δ, aggf=aggf, λ=λ, IS=IS, num_iters=num_opt_iters, rng=rng)
-    opt_fun, safety_fun = build_nsbst(D, π, oparams, ϕ, τ; nboot_train=nboot_train, nboot_test=nboot_test, δ=δ, λ=λ, IS=IS, num_iters=num_opt_iters, rng=rng)
+    opt_fun, safety_fun = build_nsbst(
+        D, 
+        π, 
+        oparams, 
+        ϕ, 
+        τ; 
+        nboot_train=nboot_train, 
+        nboot_test=nboot_test, 
+        δ=δ, 
+        λ=λ, 
+        IS=IS, 
+        num_iters=num_opt_iters, 
+        rng=rng
+    )
 
-    tidx, piflag = HICOPI!(oparams, π, D, train_idxs, test_idxs, sample_fn, opt_fun, safety_fun, πsafe, τ, δ, sm, num_iters, warmup_steps)
+    tidx, piflag = HICOPI!(
+        oparams, 
+        π, 
+        D, 
+        train_idxs, 
+        test_idxs, 
+        sample_fn, 
+        opt_fun, 
+        safety_fun, 
+        πsafe, 
+        τ, 
+        δ, 
+        sm, 
+        num_iters, 
+        warmup_steps
+    )
+
     res = save_results(fpath, rec, D.rewards, tidx, piflag, save_res)
     # display(plot_results(rec, D.rewards, tidx, piflag, "NS Discrete Entropy"))
     return res
@@ -250,6 +310,30 @@ function save_results(fpath, rec::SafetyPerfRecord, rews, tidxs, piflag, save_re
     return sumres
 end
 
+"""
+Generate a random number from a log-uniform distribution between low and high
+using the provided random number generator. The code calculates the 
+log-probability of the generated number.
+
+The number and the log-probability are returned.
+"""
+function logRand(low, high, rng)
+    # Generate a random number from a uniform distribution between log(low) and log(high)
+    random_value= rand(rng, Uniform(log(low), log(high)))
+    # Then take the exponential of this number to get a number from a log-uniform distribution
+    # (Then, log(X) has a uniform distribution between log(low) and log(high))
+    X = exp(random_value)
+    # PDF: 1 / ( X * log(high / low) )
+    # log-PDF: -log(X) - log(log(high) - log(low))
+    # 
+
+    # Calculate the log-probability of X, which is calculated between log(low) and log(high)
+    # TODO: log(high) - log(high) will always be 0, shouldn't it be log(high) - log(low)
+    logp = -log(X) - log(log(high) - log(low)) # -log(log(high) - log(high) - log(X))
+
+    # Return the generated number and its log-probability
+    return X, logp
+end
 function logRand(low, high, rng)
     X = exp(rand(rng, Uniform(log(low), log(high))))
     logp = -log(log(high) - log(high) - log(X))
@@ -257,50 +341,76 @@ function logRand(low, high, rng)
 end
 
 function sample_ns_hyperparams(rng)
+    # TODO what are these parameters?
+    # Pick one of the values from the list [2,4,6,8]
     τ = rand(rng, [2,4,6,8])
+    # Pick a random number between 0.00005 and 1.0
     λ = logRand(0.00005, 1.0, rng)[1]
-    opt_ratio = rand(rng)*3 + 2 #[2,5]
+    # Pick a random number between 2 and 5
+    opt_ratio = rand(rng)*3 + 2
+    # Pick a random number between 1 and 4 (inclusive)
     fborder = rand(rng, 1:4)
+    # Return the sampled hyperparameters as a tuple in which tau and fborder are rounded to integers
     params = (round(Int, τ), λ, opt_ratio, round(Int, fborder))
     return params
 end
 
 function sample_stationary_hyperparams(rng)
+    # TODO what are these parameters?
+    # Pick one of the values from the list [2,4,6,8]
     τ = rand(rng, [2,4,6,8])
+    # Pick a random number between 0.00005 and 1.0
     λ = logRand(0.00005, 1.0, rng)[1]
-    opt_ratio = rand(rng)*3 + 2 #[2,5]
+    # Pick a random number between 2 and 5
+    opt_ratio = rand(rng)*3 + 2
     fborder = 0
+    # Return the sampled hyperparameters as a tuple in which tau and fborder are rounded to integers
     params = (round(Int, τ), λ, opt_ratio, round(Int, fborder))
     return params
 end
 
 
-function runsweep(id, seed, algname, save_dir, trials, speed, num_episodes)
+# Function to run a sweep of trials for a given algorithm
+function runsweep(seed, algname, save_dir, trials, speed, num_episodes)
+    # Initialize a random number generator with the provided seed
     rng = Random.MersenneTwister(seed)
 
+    # Create a name for the save file based on the algorithm name and seed
     save_name = "$(algname)_$(lpad(seed, 5, '0')).csv"
 
+    # Join the save directory and save name to create the full save path
     save_path = joinpath(save_dir, save_name)
 
-    open(save_path, "w") do f
-        write(f, "tau,lambda,optratio,fborder,obsperf,canperf,algperf,regret,foundpct,violation\n")
-        flush(f)
-        for trial in 1:trials
-            if algname == "stationary"
-                hyps = sample_stationary_hyperparams(rng)
-            else
-                hyps = sample_ns_hyperparams(rng)
-            end
-            res = optimize_nsdbandit_safety(num_episodes, rng, speed, hyps, "nopath.csv", false)
+    # Open the save file for writing
+    file = open(save_path, "w")
+    
+    # Write the header line to the save file
+    write(file, "tau,lambda,optratio,fborder,obsperf,canperf,algperf,regret,foundpct,violation\n")
+    # Flush the file to ensure the header line is written
+    flush(file)
 
-            result = join([hyps..., res...], ',')
-            write(f, "$(result)\n")
-            flush(f)
-            # println("$trial \t $(result)")
-            # flush(stdout)
+    # Loop over the number of trials
+    for trial in 1:trials
+        # If the algorithm name is "stationary", sample stationary hyperparameters
+        # Otherwise, sample non-stationary hyperparameters
+        if algname == "stationary"
+            hyps = sample_stationary_hyperparams(rng)
+        else
+            hyps = sample_ns_hyperparams(rng)
         end
-    end
 
+        # Run the optimization for the non-stationary bandit safety problem
+        res = optimize_nsdbandit_safety(num_episodes, rng, speed, hyps, "nopath.csv", false)
+
+        # Join the hyperparameters and results into a single string
+        result = join([hyps..., res...], ',')
+
+        # Write the result string to the save file
+        write(file, "$(result)\n")
+
+        # Flush the file to ensure the result line is written
+        flush(file)
+    end
 end
 
 function tmp(num_episodes, speed)
@@ -325,8 +435,11 @@ function tmp(num_episodes, speed)
     display(learning_curves(r2, r1, baseline, ["Baseline", "SPIN"], "Nonstationary Recommender System"))
 end
 
+# Main function to run the experiments
 function main()
+    # Create a settings object to hold the arguments
     s = ArgParseSettings()
+    # Add arguments to the settings object
     @add_arg_table! s begin
         "--alg-name", "-a"
             help = "name of the algorithm to run"
@@ -359,28 +472,47 @@ function main()
 
     end
 
+    # Parse the command line arguments and set them into the s object
+    # (ARGS in Julia is a global variable that holds the command line arguments)
     parsed_args = parse_args(ARGS, s)
+
+    # Extract the algorithm name from the parsed arguments
     aname = parsed_args["alg-name"]
+
+    # Print the algorithm name and the log directory
     println(aname)
     println(parsed_args["log-dir"])
+
+    # Flush the standard output to ensure that the previous prints are displayed
     flush(stdout)
+
+    # Extract the save directory from the parsed arguments
     save_dir = parsed_args["log-dir"]
 
+    # Extract the number of trials, id, seed, speed, and number of episodes from the parsed arguments
     trials = parsed_args["trials"]
     id = parsed_args["id"]
     seed = parsed_args["seed"]
     speed = parsed_args["speed"]
     num_episodes = parsed_args["eps"]
 
+    # Join the save directory with a subdirectory named "discretebandit_" followed by the speed
     save_dir = joinpath(save_dir, "discretebandit_$speed")
+
+    # Create the save directory and its parents if they do not exist
     mkpath(save_dir)
 
-
+    # Print the id, seed, and their sum
     println(id, " ", seed, " ", id + seed)
+
+    # Flush the standard output to ensure that the previous print is displayed
     flush(stdout)
+
+    # Update the seed to be the sum of id and seed
     seed = id + seed
 
-    runsweep(id, seed, aname, save_dir, trials, speed, num_episodes)
+    # Run the sweep with the specified parameters
+    runsweep(seed, aname, save_dir, trials, speed, num_episodes)
 
 end
 

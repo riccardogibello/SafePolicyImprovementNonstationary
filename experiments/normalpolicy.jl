@@ -92,6 +92,8 @@ function set_params!(π::StatelessNormalPolicy{T,true}, θ::Array{T}) where {T}
 end
 
 function set_params!(π::StatelessNormalPolicy{T,false}, θ::Array{T}) where {T}
+    # The @. macro is used to broadcast the operation to all elements of the array;
+    # this is equivalent to π.μ = θ, but it is more efficient.
     @. π.μ = θ
 end
 

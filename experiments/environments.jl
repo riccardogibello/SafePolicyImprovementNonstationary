@@ -29,8 +29,10 @@ function sample_reward!(b::DiscreteBanditParams{T}, action::Int, rng) where {T}
 end
 
 function sample_reward!(b::NonStationaryDiscreteBanditParams{T}, action::Int, rng) where {T}
+    # Calculate the expected reward of a particular action in the bandit problem (multiplying it by the 
+    # seasonal term), and add a noise to it to perturb the value of the performance;
     r = b.μ[action] * sin(b.t[1] * b.τ[action] + b.k[action]) + b.σ[action] * randn(rng)
-    # println("$action $(b.t[1]) $(b.τ[action]) $(b.k[action]) ", b.t[1] * b.τ[action] + b.k[action], " ", sin(b.t[1] * b.τ[action] + b.k[action]))
+    # Update the value of the first value in the array of timesteps by adding one
     b.t[1] += 1.0
     return r
 end
@@ -49,13 +51,24 @@ function eval_policy(b::NonstationaryQuadraticBanditParams{T}, π::StatelessNorm
 end
 
 function eval_policy(b::T, π::StatelessSoftmaxPolicy) where {T <: AbstractDiscreteBandit}
+    # Given the environment b and the policy π, evaluate the policy by taking the expected value of the rewards
     return eval_policy(b, π.probs)
 end
 
 function eval_policy(b::NonStationaryDiscreteBanditParams{T}, p::Array{T2}) where {T,T2}
     J = 0.0
+    # Take the first timestep number (ZERO at the beginning of the episode)
     t = b.t[1]
+    # For each i between 1 and the length of the 
     for i in 1:length(p)
+        # Sum, to the total expected return, the expected return of action i under the current policy;
+        # calculate the current return as the multiplication between the probability of the action,
+        # the mean reward of the action, and the sine of the product between the current timestep and the
+        # time constant of the action, plus the phase shift of the action; this is likely used to model
+        # the non-stationarity of the bandit problem (seasonality)
+        # sin( t * [0, (2*pi)/2000.0, (2*pi)/1500.0, (2*pi)/1250.0] + (pi/2 + 2pi / 5 * [0...4]) )
+        # i.e., for stationary environment -> x * y * sin(pi/2)
+        # i.e., for non-stationary environment (speed=1) -> x * y * sin(t * (2*pi)/2000.0 + 2pi / 5 * 1)
         J += p[i] * b.μ[i] * sin(t * b.τ[i] + b.k[i])
     end
     return J

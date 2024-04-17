@@ -122,10 +122,14 @@ end
 
 
 function fourierseries(::Type{T}, order::Int) where {T}
+    # collect(T, 0:order) = create an array of incremental values from 0 to order of type T
+    # then multiply each of them by pi
     C = collect(T, 0:order) .* π
+    # Perform element-wise the cosine between elements of C and x
     return x -> @. cos(C * x)
 end
 
 function normalize_time(D, τ)
+    # Return an anonymous function that normalizes the x value by dividing it by the length of D plus τ
     return x -> x / (length(D) + τ)
 end
