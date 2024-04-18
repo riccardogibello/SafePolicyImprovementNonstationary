@@ -32,7 +32,7 @@ function sample_reward!(b::NonStationaryDiscreteBanditParams{T}, action::Int, rn
     # Calculate the expected reward of a particular action in the bandit problem (multiplying it by the 
     # seasonal term), and add a noise to it to perturb the value of the performance;
     r = b.μ[action] * sin(b.t[1] * b.τ[action] + b.k[action]) + b.σ[action] * randn(rng)
-    # Update the value of the first value in the array of timesteps by adding one
+    # Update the value of the timestamp in the bandit problem
     b.t[1] += 1.0
     return r
 end
@@ -59,16 +59,13 @@ function eval_policy(b::NonStationaryDiscreteBanditParams{T}, p::Array{T2}) wher
     J = 0.0
     # Take the first timestep number (ZERO at the beginning of the episode)
     t = b.t[1]
-    # For each i between 1 and the length of the 
+    # For each i between 1 and the length of the probabilities of taking any of the actions
     for i in 1:length(p)
         # Sum, to the total expected return, the expected return of action i under the current policy;
-        # calculate the current return as the multiplication between the probability of the action,
-        # the mean reward of the action, and the sine of the product between the current timestep and the
-        # time constant of the action, plus the phase shift of the action; this is likely used to model
-        # the non-stationarity of the bandit problem (seasonality)
-        # sin( t * [0, (2*pi)/2000.0, (2*pi)/1500.0, (2*pi)/1250.0] + (pi/2 + 2pi / 5 * [0...4]) )
-        # i.e., for stationary environment -> x * y * sin(pi/2)
-        # i.e., for non-stationary environment (speed=1) -> x * y * sin(t * (2*pi)/2000.0 + 2pi / 5 * 1)
+        # p = probability of the action;
+        # b.μ = mean reward of the action;
+        # b.τ = seasonal frequency of the action (same for all);
+        # b.k = phase shift of the action (different for each action);
         J += p[i] * b.μ[i] * sin(t * b.τ[i] + b.k[i])
     end
     return J

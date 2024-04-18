@@ -81,15 +81,25 @@ function push!(H::BanditHistory{T,TA}, action::TA, blogp::T, reward::T) where {T
     push!(H.rewards, reward)
 end
 
-# Define a function to collect data for a bandit problem by taking N actions using the policy π,
-# sampling rewards from the bandit problem using the sample_fn! function, and storing the actions,
-# log-probabilities, and rewards in the BanditHistory object H
+function log_eval(env, action, rng, sample_counter, rec, eval_fn, π, πsafe)
+    # Add one to the value that stores the current timestamp
+    sample_counter[1] += 1
+    record_perf!(rec, eval_fn, sample_counter[1], π, πsafe)
+    # Return the sampled reward from the environment, given the current action
+    return sample_reward!(env, action, rng)
+end
+
+"""
+Collect data for a bandit problem by taking N actions using the policy π,
+sampling rewards from the bandit problem using the sample_fn! function, and storing the actions,
+log-probabilities, and rewards in the given BanditHistory object H.
+"""
 function collect_data!(H::BanditHistory, π, sample_fn!, N, rng)
     # For N timestep
     for i in 1:N
-        # Get an action log-probability from the policy π in a random manner
+        # Get an action's log-probability from the policy π in a random manner
         logp = get_action!(π, rng)
-        # Sample a reward from the bandit problem using the sample_fn! function
+        # Sample a reward from the bandit problem using the given function
         r = sample_fn!(π.action, rng)
         # Add the action, log-probability, and reward to the BanditHistory object H
         push!(H, deepcopy(π.action), logp, r)

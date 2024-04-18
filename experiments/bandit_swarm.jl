@@ -64,17 +64,20 @@ function plot_results(rec::SafetyPerfRecord, rews, tidxs, piflag, title)
 end
 
 function record_perf!(rec::SafetyPerfRecord, eval_fn, t, πc, πsafe)
+    # Add the current timestep to the t array of the record
     push!(rec.t, t)
+    # Add the expected return of the policy πc to the Jpi array of the record
     push!(rec.Jpi, eval_fn(πc))
+    # Add the expected return of the policy πsafe to the Jsafe array of the record
     push!(rec.Jsafe, eval_fn(πsafe))
 end
 
 function optimize_nsdbandit_safety(
-    num_episodes, 
-    rng, 
-    speed, 
-    hyperparams, 
-    fpath, 
+    num_episodes,
+    rng,
+    speed,
+    hyperparams,
+    fpath,
     save_res
 )
     # Create a new BanditHistory object to store the history of the bandit problem
@@ -83,9 +86,11 @@ function optimize_nsdbandit_safety(
     arm_payoffs = [1.0, 0.8, 0.6, 0.4, 0.2]
     # Set the array of frequencies for the arms of the bandit problem
     arm_freq = zeros(length(arm_payoffs))
-    # If the non-stationarity speed is 0 (stationary environment)
+    # if the problem is stationary
     if speed == 0
+        # set the value that modifies the frequency of the sin seasonal term to 0
         κ = 0 #(2*pi)/1500.0
+    # otherwise, set an increasing frequency of the sin seasonal term as the speed increases
     elseif speed == 1
         κ = (2*pi)/2000.0
     elseif speed == 2
@@ -102,7 +107,9 @@ function optimize_nsdbandit_safety(
     arm_k = similar(arm_freq)
     # Assign to each element of arm_k the value of pi/2
     arm_k .= pi/2
-    # Multiply the 2*pi/5 to each element of the left-hand side array, then sum each element into the arm_k array
+    # Add to each element of the arm_k array the element-wise product between 2*pi/5 and the array on the right
+    # The array on the left is made that the sin seasonal term has, at the same time, different values
+    # for the different arms
     arm_k .+= (2*pi/5) .* [0.0, 1.0, 2.0, 3.0, 4.0]
     # Create a new array of ones with the same length as the arm_payoffs array
     # that represents the Rademacher variable probabilities
@@ -111,10 +118,15 @@ function optimize_nsdbandit_safety(
 
     # Create a new NonStationaryDiscreteBanditParams object with the arm_payoffs, arm_sigma, arm_freq, and arm_k arrays
     env = NonStationaryDiscreteBanditParams(
-        arm_payoffs, 
-        arm_sigma, 
-        arm_freq, 
-        arm_k, 
+        # arm_payoffs contains the payoffs of each arm
+        arm_payoffs,
+        # arm_sigma contains TODO 
+        arm_sigma,
+        # arm_freq contains the frequencies of the seasonal sin term
+        arm_freq,
+        # arm_k contains the horizontal shifts of the seasonal sin term
+        arm_k,
+        # t contains the current timestep of the bandit problem
         [0.0]
     )
 
@@ -130,60 +142,37 @@ function optimize_nsdbandit_safety(
     # Clone the built policy and assign it to πsafe
     πsafe = clone(π)
 
-    # ===========================================================
-    # Define a function with a short function definition syntax.
-    env_fn(action, rng) = sample_reward!(env, action, rng)
-    # ===========================================================
-    
+    # Prepare a counter for the samples
     sample_counter = [0]
+    # Instantiate a variable that contains the record of the performance of the policy
     rec = SafetyPerfRecord(Int, Float64)
-    eval_fn(π) = eval_policy(env, π)
-    # ===========================================================
-    function log_eval(action, rng, sample_counter, rec, eval_fn, π, πsafe)
-        sample_counter[1] += 1
-        record_perf!(rec, eval_fn, sample_counter[1], π, πsafe)
-        return env_fn(action, rng)
-    end
-    # ===========================================================
-    log_fn = (action, rng) -> log_eval(action, rng, sample_counter, rec, eval_fn, π, πsafe)
-    # sample_fn(D, π, N) = collect_data!(D, π, env_fn, N, rng)
-    sample_fn(D, π, N) = collect_data!(D, π, log_fn, N, rng)
 
     # Set the parameters for the optimization algorithm (Adam)
     oparams = AdamParams(get_params(π), 1e-2; β1=0.9, β2=0.999, ϵ=1e-5)
-
-    τ, λ, opt_ratio, fborder = hyperparams
+    # τ = num_steps to optimize for future performance and to collect data for
+    τ, λ, opt_ratio, fb_order = hyperparams
+    δ = 0.05 # percentile lower bound to maximize future for (use 1-ϵ for upper bound)
+    # aggf = mean # function to aggregate future performance over (e.g., mean over τ steps,) 
+    #               maximium and minimum are also useful
+    IS = PerDecisionImportanceSampling()
 
     nboot_train = 200 # num bootstraps
     nboot_test = 500
-    # τ = 8 # num_steps to optimize for future performance and to collect data for
-    δ = 0.05 # percentile lower bound to maximize future for (use 1-ϵ for upper bound)
-    # aggf = mean # function to aggregate future performance over (e.g., mean over τ steps,) maximium and minimum are also useful
-    # λ = 0.000005
-    IS = PerDecisionImportanceSampling()
-    # num_opt_iters = 40
-
     num_opt_iters = round(Int, τ*opt_ratio)
     warmup_steps = 20
     sm = SplitLastKKeepTest(0.25)  # Fraction of data samples to be used for training
-    # Assign the normalization function to nt
+    # Create nt, a function that takes a timestep value and normalizes it with respect to the
+    # length of the bandit history and the tau value (future steps)
     nt = normalize_time(D, τ)
-    # Create a Fourier series with the fborder value
-    fb = fourierseries(Float64, fborder)
-    # Apply a Fourier series to the normalized time
+    # Call fourierseries method, so that fb will be a function to transform a scalar to a vector
+    # of the cosine values of the products between the scalar and the elements of an incremental array C
+    fb = fourierseries(Float64, fb_order)
+    # Define the phi function, which accepts a timestep value, normalizes and fourier-transform it
     ϕ(t) = fb(nt(t))
 
-    num_iters = num_episodes / τ
-    # ϕ(t) = fb(t/1520)
-    # ϕ(t) = [1.0]
-    train_idxs = Array{Int, 1}()
-    test_idxs = Array{Int, 1}()
-
-    # opt_fun, safety_fun = build_nsbs(D, π, oparams, ϕ, τ; nboot_train=nboot_train, nboot_test=nboot_test, δ=δ, aggf=aggf, λ=λ, IS=IS, num_iters=num_opt_iters, rng=rng)
+    # Build the functions that are used to optimize the policy and perform the
+    # safety test
     opt_fun, safety_fun = build_nsbst(
-        D, 
-        π, 
-        oparams, 
         ϕ, 
         τ; 
         nboot_train=nboot_train, 
@@ -195,6 +184,21 @@ function optimize_nsdbandit_safety(
         rng=rng
     )
 
+    # ===========================================================
+    # Define a function that, taking a policy as input, evaluates the expected return given the
+    # environment (global variable or within the scope) and the policy
+    eval_fn(π) = eval_policy(env, π)
+    # Create an anonymous (lambda) function to be called inside the collect_data loop; this is used
+    # to update the data structures of the bandit given a chosen action (both following the
+    # pi and pi_safe policies);
+    log_fn = (action, rng) -> log_eval(env, action, rng, sample_counter, rec, eval_fn, π, πsafe)
+    # Define a sample_fn function to collect, given an environment, a policy, and a number of samples,
+    # the data for the bandit problem
+    sample_fn(D, π, N) = collect_data!(D, π, log_fn, N, rng)
+    # ===========================================================
+    num_iters = num_episodes / τ
+    train_idxs = Array{Int, 1}()
+    test_idxs = Array{Int, 1}()
     tidx, piflag = HICOPI!(
         oparams, 
         π, 
@@ -218,7 +222,9 @@ function optimize_nsdbandit_safety(
     # return (rec, D.rewards, tidx, piflag)
 end
 
-function combine_trials(results)
+function combine_trials(
+    results
+)
     T = length(results)
     N = length(results[1][2])
     t = results[1][1].t
@@ -349,9 +355,9 @@ function sample_ns_hyperparams(rng)
     # Pick a random number between 2 and 5
     opt_ratio = rand(rng)*3 + 2
     # Pick a random number between 1 and 4 (inclusive)
-    fborder = rand(rng, 1:4)
+    fb_order = rand(rng, 1:4)
     # Return the sampled hyperparameters as a tuple in which tau and fborder are rounded to integers
-    params = (round(Int, τ), λ, opt_ratio, round(Int, fborder))
+    params = (round(Int, τ), λ, opt_ratio, round(Int, fb_order))
     return params
 end
 
@@ -363,9 +369,9 @@ function sample_stationary_hyperparams(rng)
     λ = logRand(0.00005, 1.0, rng)[1]
     # Pick a random number between 2 and 5
     opt_ratio = rand(rng)*3 + 2
-    fborder = 0
+    fb_order = 0
     # Return the sampled hyperparameters as a tuple in which tau and fborder are rounded to integers
-    params = (round(Int, τ), λ, opt_ratio, round(Int, fborder))
+    params = (round(Int, τ), λ, opt_ratio, round(Int, fb_order))
     return params
 end
 

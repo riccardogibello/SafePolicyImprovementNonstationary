@@ -177,38 +177,9 @@ function maximize_nsbs_lower!(params, π, D, idxs, ϕ, τ, num_boot, δ, aggf, �
 end
 
 
-function maximize_nsbst_lower!(params, π, D, idxs, ϕ, τ, num_boot, δ, λ, IS, old_ent, num_iters, rng)
-    θ = get_params(π)
-    g! = nsbst_lower_grad(θ, D, idxs, π, ϕ, τ, num_boot, δ, λ, IS, old_ent, rng)
-    result = optimize(params, g!, θ, num_iters)
-    @. θ = result
-    set_params!(π, θ)
-end
-
-
-function maximize_ns_lower!(params, π, D, idxs, ϕ, τ, num_boot, δ, λ, IS, old_ent, num_iters, rng)
-    θ = get_params(π)
-    g! = ns_lower_grad(θ, D, idxs, π, ϕ, τ, num_boot, δ, λ, IS, old_ent, rng)
-    result = optimize(params, g!, θ, num_iters)
-    @. θ = result
-    set_params!(π, θ)
-end
-
-
-
-
-function build_nsbs(D, π, oparams, ϕ, τ; nboot_train=200, nboot_test=500, δ=0.05, aggf=mean, λ=0.01, IS=PerDecisionImportanceSampling(), old_ent=false, num_iters=100, rng=Base.GLOBAL_RNG)
-    opt_fun(oparams, π, D, idxs) = maximize_nsbs_lower!(oparams, π, D, idxs, ϕ, τ, nboot_train, δ, aggf, λ, IS, old_ent, num_iters, rng)
-    bound_fun(D, idxs, π, δ, tail) = nswildbs_CI(π, δ, tail, D, idxs, ϕ, τ, nboot_test, aggf, IS, rng)
-    return opt_fun, bound_fun
-end
-
-
 function build_nsbst(
-    D, 
-    π, 
-    oparams, 
     ϕ, 
+    # Note: ";" is used to separate positional arguments from keyword arguments
     τ; 
     nboot_train=200, 
     nboot_test=500, 
@@ -219,8 +190,34 @@ function build_nsbst(
     num_iters=100, 
     rng=Base.GLOBAL_RNG
 )
-    opt_fun(oparams, π, D, idxs) = maximize_nsbs_lower!(oparams, π, D, idxs, ϕ, τ, nboot_train, δ, mean, λ, IS, old_ent, num_iters, rng)
-    bound_fun(D, idxs, π, δ, tail) = nswildbst_CI(π, δ, tail, D, idxs, ϕ, τ, nboot_test, IS, rng)
+    opt_fun(oparams, π, D, idxs) = maximize_nsbs_lower!(
+        oparams, 
+        π, 
+        D, 
+        idxs, 
+        ϕ, 
+        τ, 
+        nboot_train, 
+        δ, 
+        mean, 
+        λ, 
+        IS, 
+        old_ent, 
+        num_iters, 
+        rng
+    )
+    bound_fun(D, idxs, π, δ, tail) = nswildbst_CI(
+        π, 
+        δ, 
+        tail, 
+        D, 
+        idxs, 
+        ϕ, 
+        τ, 
+        nboot_test, 
+        IS, 
+        rng
+    )
     return opt_fun, bound_fun
 end
 

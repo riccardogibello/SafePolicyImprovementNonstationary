@@ -8,11 +8,23 @@ function softmax(x)
 end
 
 # function sample_discrete(p::Array{<:Real, 1}, rng)::Int
+"""
+Implement the inverse transform sampling method to sample a discrete probability distribution.
+The inverse transform sampling method for generating random numbers that are distributed according
+to a given probability distribution. This method is used to generate random numbers that follow
+a specific distribution, rather than a uniform distribution. 
+"""
 function sample_discrete(p, rng)::Int
+    # Get the length of the array of probabilities
     n = length(p)
+    # Initialize a counter to 1
     i = 1
+    # Initialize the cumulative probability to the first element of the array
     c = p[1]
+    # Generate a random number between 0 and 1
     u = rand(rng)
+    # Find the inverse of the CDF of the random number (i.e., the index of the
+    # array which satisfies P(X <= x) = u, where X is the random variable and x is the value of the random variable)
     while c < u && i < n
         c += p[i += 1]
     end
@@ -44,8 +56,9 @@ function get_action_probabilities!(π::StatelessSoftmaxPolicy)
 end
 
 function get_action!(π::StatelessSoftmaxPolicy, rng)
-    # get_action_probabilities!(π)
+    # Set the current policy action index to the newly drawn one
     π.action = sample_discrete(π.probs, rng)
+    # Find the value of the log probability of the action
     logp = log(π.probs[π.action])
     return logp
 end

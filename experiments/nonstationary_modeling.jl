@@ -120,16 +120,28 @@ function create_features(ϕ, x, τ)
     return Φ, ϕτ
 end
 
+"""
+This function accepts a type T and a Fourier basis order.
 
+    It returns a function that accepts a scalar x and returns a vector of |C| length, 
+    containing the element-wise cosine of the product between C and x.
+"""
 function fourierseries(::Type{T}, order::Int) where {T}
-    # collect(T, 0:order) = create an array of incremental values from 0 to order of type T
-    # then multiply each of them by pi
+    # create an array of incremental values (of type T) from 0 to order 
+    # and multiply each of them by pi
     C = collect(T, 0:order) .* π
-    # Perform element-wise the cosine between elements of C and x
+    # Return a function that accepts a scalar x and returns a vector of |C| length, 
+    # containing the element-wise cosine of the product between C and x
     return x -> @. cos(C * x)
 end
 
+"""
+Given a BanditHistory object and a number of steps for future performance, returns a function
+    that takes as input x (time instant) and returns its normalized value (dividing by the sum of the
+    length of the bandit history and the number of steps for future performance).
+
+"""
 function normalize_time(D, τ)
     # Return an anonymous function that normalizes the x value by dividing it by the length of D plus τ
-    return x -> x / (length(D) + τ)
+    return x -> begin x / (length(D) + τ) end
 end
