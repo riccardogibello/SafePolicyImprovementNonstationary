@@ -63,12 +63,32 @@ function get_action!(π::StatelessSoftmaxPolicy, rng)
     return logp
 end
 
+# NOTE: the ! at the end of the function name is a convention in Julia to indicate that the function 
+# modifies its arguments in place. This is a convention and not a requirement of the language.
+"""
+Calculate the gradient of the log probability of the action with respect to the policy and the 
+chosen action.
+
+grad is a vector of the same size as the policy parameter vector θ, and it is used to store the
+gradient of the log probability of the action with respect to the policy parameter vector θ.
+
+π is the policy object that is used to calculate the gradient.
+
+action is the index of the action that was chosen by the policy.
+"""
 function gradient_logp!(grad, π::StatelessSoftmaxPolicy, action::Int)
+    # Set the gradient vector to zero
     fill!(grad, 0.)
-    # get_action_probabilities!(π)
+    # Find the value of the log probability of the given action, different
+    # from the one which was chosen by the policy
     logp = log(π.probs[action])
 
+    # Subtract, from each value of the gradient vector (i.e., derivative
+    # with respect to the specific input action, set all to zero), 
+    # the probabilities of all actions from the gradient
     grad .-= π.probs
+    # Add 1 to the gradient of the chosen action, since it is the one having
+    # more influence on the output
     grad[action] += 1.
 
     return logp

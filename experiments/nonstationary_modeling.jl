@@ -12,8 +12,12 @@ This function is a helper function to be used for predicting
 future points in a time series and for in wild bootstrap.
 """
 function get_coefs(Φ, ϕτ)
+    # Calculate the pseudo-inverse of the matrix Φ using the Moore-Penrose inverse;
     H = pinv(Φ' * Φ) * Φ'
+    # Calculate the least squares coefficients for making predictions of Y hat
     W = Φ * H
+    # Calculate the product between the transformed tau and the H, that is used 
+    # in predicting the performances
     ϕ = ϕτ * H
     return W, ϕ
 end
@@ -26,8 +30,10 @@ and along with the vector of residuals Y - Ŷ.
 W and ϕ should be the output of get_coefs.
 """
 function get_preds_and_residual(Y, W, ϕ)
+    # Calculate the predicted Y values starting from the W and the observed Y
     Ŷ = W*Y
     y = ϕ * Ŷ
+    # Residuals between the observed values of Y and the predicted values of Y
     ξ = Y .- Ŷ
     return y, ξ
 end
@@ -71,8 +77,11 @@ function get_preds_and_residual_t(Y, W, ϕ, C)
     Ŷ = W*Y
     y = ϕ * Ŷ
     x = C * Ŷ
+    # Get the residuals between the observed and the predicted performances 
     ξ = Y .- Ŷ
+    # ϕ = is the product between ϕ_tau and H, that is used in predicting the performances
     Σ = ϕ * Diagonal(ξ.^2) * ϕ'
+    # Get the mean variance
     v = mean(Σ)
     
     return y, v, x, ξ
@@ -113,9 +122,19 @@ end
 """
 create features for time series using basis function ϕ,
 for observed time points x, and future time points tau
+
+The phi function is the fourier transform function (see below), 
+    that accepts a scalar x and returns a vector of |C| length,
+    containing the element-wise cosine of the product between C and x.
+
+The x vector contains the 
 """
 function create_features(ϕ, x, τ)
+    # Create the omega matrix, by applying the function phi to each scalar in x; every result of 
+    # this, is concatenated horizontally to form a matrix; the ' is the transposition operator,
+    # so each feature vector is a row;
     Φ = hcat(ϕ.(x)...)'
+    # Create the Fourier transform of the tau values (time points), in the same way as above
     ϕτ = hcat(ϕ.(τ)...)'
     return Φ, ϕτ
 end

@@ -112,7 +112,7 @@ function optimize_nsdbandit_safety(
     # for the different arms
     arm_k .+= (2*pi/5) .* [0.0, 1.0, 2.0, 3.0, 4.0]
     # Create a new array of ones with the same length as the arm_payoffs array
-    # that represents the Rademacher variable probabilities
+    # that represents the noise for each arm payoff
     arm_sigma = ones(length(arm_payoffs))
     arm_sigma .*= 0.05
 
@@ -133,11 +133,13 @@ function optimize_nsdbandit_safety(
     # TODO this seems to be useless because the values are statically reassigned
     # θ = deepcopy(arm_payoffs) .* 0.4
 
-    # Set the theta values (payoffs?) for each arm
+    # Set the theta values, that are the policy parameters, for each arm
     θ = [2.0, 1.5, 1.2, 1.0, 1.0]
 
     # Create a new policy pi to choose among the arm_payoffs
     π = StatelessSoftmaxPolicy(Float64, length(arm_payoffs))
+    # Set the parameters of the policy to the θ values 
+    # (and consequently, the action probabilities)
     set_params!(π, θ)
     # Clone the built policy and assign it to πsafe
     πsafe = clone(π)
@@ -354,7 +356,7 @@ function sample_ns_hyperparams(rng)
     λ = logRand(0.00005, 1.0, rng)[1]
     # Pick a random number between 2 and 5
     opt_ratio = rand(rng)*3 + 2
-    # Pick a random number between 1 and 4 (inclusive)
+    # Pick a random number between 1 and 4 (inclusive) for the Fourier basis order
     fb_order = rand(rng, 1:4)
     # Return the sampled hyperparameters as a tuple in which tau and fborder are rounded to integers
     params = (round(Int, τ), λ, opt_ratio, round(Int, fb_order))
@@ -369,6 +371,8 @@ function sample_stationary_hyperparams(rng)
     λ = logRand(0.00005, 1.0, rng)[1]
     # Pick a random number between 2 and 5
     opt_ratio = rand(rng)*3 + 2
+    # Set the Fourier basis order to 0 (i.e., no change in the environment is needed,
+    # therefore the only component is the constant one)
     fb_order = 0
     # Return the sampled hyperparameters as a tuple in which tau and fborder are rounded to integers
     params = (round(Int, τ), λ, opt_ratio, round(Int, fb_order))
@@ -397,11 +401,12 @@ function runsweep(seed, algname, save_dir, trials, speed, num_episodes)
 
     # Loop over the number of trials
     for trial in 1:trials
-        # If the algorithm name is "stationary", sample stationary hyperparameters
-        # Otherwise, sample non-stationary hyperparameters
+        # If the algorithm name is "stationary"
         if algname == "stationary"
+            # sample stationary hyperparameters
             hyps = sample_stationary_hyperparams(rng)
         else
+            # Otherwise, sample non-stationary hyperparameters
             hyps = sample_ns_hyperparams(rng)
         end
 

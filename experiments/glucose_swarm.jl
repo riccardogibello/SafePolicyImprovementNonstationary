@@ -68,7 +68,6 @@ function record_perf!(rec::SafetyPerfRecord, eval_fn, t, πc, πsafe)
     push!(rec.t, t)
     push!(rec.Jpi, eval_fn(πc))
     push!(rec.Jsafe, eval_fn(πsafe))
-    # println(t, "\t", rec.Jpi[t], "\t", rec.Jsafe[t], "\t", get_params(πc))
 end
 
 function plot_results(rews, tidxs, piflag, title)
@@ -149,7 +148,7 @@ function optimize_nsglucose_safety(num_episodes, rng, speed, hyperparams, fpath,
     train_idxs = Array{Int, 1}()
     test_idxs = Array{Int, 1}()
 
-    opt_fun, safety_fun = build_nsbst(D, π, oparams, ϕ, τ; nboot_train=nboot_train, nboot_test=nboot_test, δ=δ, λ=λ, IS=IS, old_ent=old_ent, num_iters=num_opt_iters, rng=rng)
+    opt_fun, safety_fun = build_nsbst(ϕ, τ; nboot_train=nboot_train, nboot_test=nboot_test, δ=δ, λ=λ, IS=IS, old_ent=old_ent, num_iters=num_opt_iters, rng=rng)
 
     tidx, piflag = HICOPI!(oparams, π, D, train_idxs, test_idxs, sample_fn, opt_fun, safety_fun, πsafe, τ, δ, sm, num_iters, warmup_steps)
     # res = save_results(fpath, rec, D.rewards, tidx, piflag, save_res)
@@ -253,7 +252,7 @@ function optimize_disc_nsglucose_safety(num_episodes, rng, speed, hyperparams, f
     train_idxs = Array{Int, 1}()
     test_idxs = Array{Int, 1}()
 
-    opt_fun, safety_fun = build_nsbst(D, π, oparams, ϕ, τ; nboot_train=nboot_train, nboot_test=nboot_test, δ=δ, λ=λ, IS=IS, old_ent=old_ent, num_iters=num_opt_iters, rng=rng)
+    opt_fun, safety_fun = build_nsbst(ϕ, τ; nboot_train=nboot_train, nboot_test=nboot_test, δ=δ, λ=λ, IS=IS, old_ent=old_ent, num_iters=num_opt_iters, rng=rng)
 
     tidx, piflag = HICOPI!(oparams, π, D, train_idxs, test_idxs, sample_fn, opt_fun, safety_fun, πsafe, τ, δ, sm, num_iters, warmup_steps)
     res = save_results(fpath, rec, D.rewards, tidx, piflag, save_res)

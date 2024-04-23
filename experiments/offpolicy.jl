@@ -17,22 +17,28 @@ function IS_weight(blogp, logp)
     return exp(logp - blogp)
 end
 
-function estimate_return!(G, H::BanditHistory, π, ::UnweightedIS)
-    @. G = IS_weight(H.blogps, H.actions, (π,)) * H.rewards
-end
-
-function estimate_entropyreturn!(G, H::BanditHistory, π, α, ::UnweightedIS)
+function estimate_entropyreturn!(
+    G, 
+    H::BanditHistory, 
+    idxs, 
+    π, 
+    α,
+    # Set a variable of this type, even if it is not used
+    ::UnweightedIS
+)
     # @. G = IS_weight(H.blogps, H.actions, (π,)) * H.rewards
-    for t in 1:length(G)
-        logp = logprob(π, H.actions[t])
-        G[t] = IS_weight(H.blogps[t], logp) * (H.rewards[t] - α * logp)
-    end
-end
-
-function estimate_entropyreturn!(G, H::BanditHistory, idxs, π, α, ::UnweightedIS)
-    # @. G = IS_weight(H.blogps, H.actions, (π,)) * H.rewards
+    # For all the elements in idxs, get its index and the element itself
     for (i,t) in enumerate(idxs)
+        # Calculate the log-probability of the action taken at time t with respect
+        # to the given policy π
         logp = logprob(π, H.actions[t])
+        # Calculate the return estimate for time t 
+        # (as the multiplication between the IS weight and 
+        # the difference between the time t reward and 
+        # alpha * logp of the action given the policy)
+        # and store it in G
+        # Note: subtract the entropy from the reward to prevent being stuck
+        # in a local minimum;
         G[i] = IS_weight(H.blogps[t], logp) * (H.rewards[t] - α * logp)
     end
 end
