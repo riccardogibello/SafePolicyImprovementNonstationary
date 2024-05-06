@@ -31,9 +31,15 @@ W and ϕ should be the output of get_coefs.
 """
 function get_preds_and_residual(Y, W, ϕ)
     # Calculate the predicted Y values starting from the W and the observed Y
-    Ŷ = W*Y
+    # Ŷ = Φ * H * Y = W * Y
+    Ŷ = W * Y
+    # print(size(Ŷ))
+    # print(size(ϕ))
+    # TODO MSG is this the prediction of the performances calculation? (rho hat)
     y = ϕ * Ŷ
+    # print(size(y))
     # Residuals between the observed values of Y and the predicted values of Y
+    # TODO MSG is this the ξ hat in the pseudocode?
     ξ = Y .- Ŷ
     return y, ξ
 end
@@ -46,23 +52,58 @@ noise generated for the wild bootstrap.
 
 y is the prediction at points ϕ using original labels Y
 ξ are the residual between the labels Y and prediction Ŷ
-ϕ are the points (coefficients) at at which the predictions y are made
+ϕ are the points (coefficients) at which the predictions y are made
 σ is the noise sample used to modify the residual, e.g., vector of {-1, 1}
 f is the function to aggregate the result for all points in ϕ, e.g., sum, mean, maximum, minimum
 """
 function wildbs_eval(y, ξ, ϕ, σ, f)
-    return f(y .+ ϕ * (ξ .* σ))
+    # Perturb the values of the y hat (pseudosamples of the performances)
+    # with the noise
+    # ξ .* σ is the ξ*
+    r = f(y .+ ϕ * (ξ .* σ))
+    # Returns the average (float) of the predicted performances
+    return r
 end
 
 """
     wildbs_CI(y, ξ, ϕ, δ, num_boot, aggf)
 
+    ϕ is the result of the product between the Fourier transform of the time points and H
+
+    num_boot is the number of train samples used for bootstrapping the confidence interval
+
 computes the δ percentiles bootstrap using the wild bootstrap method with num_boot bootstrap samples
 for original predictions y, with residuals ξ, at features ϕ, aggregated by aggf.
 """
-function wildbs_CI(y, ξ, ϕ, δ, num_boot, aggf, rng)
-    bsamples = [wildbs_eval(y, ξ, ϕ, sign.(randn(rng, length(ξ))), aggf) for i in 1:num_boot]
-    return quantile(sort(bsamples), δ, sorted=true)
+function wildbs_CI(
+    y, 
+    ξ, 
+    ϕ, 
+    δ, 
+    num_boot, 
+    aggf, 
+    rng
+)
+    # Generate the wild-bootstrap samples (num_boot) from averaging the 
+    # values of the perturbed performances
+    bootstrapping_samples = [wildbs_eval(
+        y, 
+        ξ,
+        # This is the result from the product of ϕτ and H
+        ϕ,
+        # Create, using the passed random number generator, a vector of the same length as ξ,
+        # containing random values of -1 and 1 (i.e. the sign of the random number)
+        sign.(randn(rng, length(ξ))), 
+        aggf
+    ) for i in 1:num_boot]
+    
+    return quantile(
+        sort(bootstrapping_samples),
+        # δ is set to 0.05 at the beginning
+        δ,
+        # sorted indicates that the given vector is already sorted
+        sorted=true
+    )
 end
 
 function get_coefst(Φ, ϕτ)

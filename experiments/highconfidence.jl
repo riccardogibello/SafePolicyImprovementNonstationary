@@ -62,10 +62,10 @@ finding a canditate policy, πc, and then checking to see if πc is
 better than the safe policy, πsafe, with confidence δ. If πc is better
 return πc otherwise return :NSF no solution found.
 
-This funciton is generic and takes as input:
+This function is generic and takes as input:
 D, previous data, which is possibly empty
 sample_fn!, a function to sample new data points using policy π
-optimize_fn, a funciton to find a new policy on data D
+optimize_fn, a function to find a new policy on data D
 confidence_test, a function that computes a high confidence upper or lower bound on a policies performance
 π, a policy to collect data with and initialize the optimization search with
 πsafe, a policy that is consider a safe baseline that can always be trusted
@@ -83,7 +83,7 @@ function HICOPI_step!(
     πsafe, 
     δ
 )
-    # Optimize the pi policy on the training data and using the optimization parameters
+    # Optimize the π policy on the training data and using the optimization parameters
     optimize_fn!(oparams, π, D, train_idxs)
 
     # If there is no test-data, then ignore the safety test_idxs
@@ -162,6 +162,7 @@ function HICOPI!(
         # Set the value to indicate whether the currently used policy is the safe one
         push!(picflag, using_pic)
         # Collect data for the next τ steps by using the current behavior policy
+        # and store the data in the bandit history
         collect_and_split!(
             D, 
             train_idxs, 
@@ -171,6 +172,8 @@ function HICOPI!(
             sample_fn!, 
             split_method
         )
+        # Perform the high confidence off-policy policy improvement step, which will
+        # return the new policy if it is safe, or the safe policy if the new policy is not safe
         result = HICOPI_step!(
             oparams, 
             π, 

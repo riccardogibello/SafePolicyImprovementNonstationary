@@ -153,7 +153,7 @@ function optimize_nsdbandit_safety(
     oparams = AdamParams(get_params(π), 1e-2; β1=0.9, β2=0.999, ϵ=1e-5)
     # τ = num_steps to optimize for future performance and to collect data for
     τ, λ, opt_ratio, fb_order = hyperparams
-    δ = 0.05 # percentile lower bound to maximize future for (use 1-ϵ for upper bound)
+    δ = 0.05 # percentile lower bound to maximize future (use 1-ϵ for upper bound)
     # aggf = mean # function to aggregate future performance over (e.g., mean over τ steps,) 
     #               maximium and minimum are also useful
     IS = PerDecisionImportanceSampling()
@@ -367,7 +367,8 @@ function sample_stationary_hyperparams(rng)
     # TODO what are these parameters?
     # Pick one of the values from the list [2,4,6,8]
     τ = rand(rng, [2,4,6,8])
-    # Pick a random number between 0.00005 and 1.0
+    # Pick a random number between 0.00005 and 1.0 for
+    # the entropy regularizer
     λ = logRand(0.00005, 1.0, rng)[1]
     # Pick a random number between 2 and 5
     opt_ratio = rand(rng)*3 + 2

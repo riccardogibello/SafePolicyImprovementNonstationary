@@ -27,18 +27,16 @@ function estimate_entropyreturn!(
     ::UnweightedIS
 )
     # @. G = IS_weight(H.blogps, H.actions, (π,)) * H.rewards
+
     # For all the elements in idxs, get its index and the element itself
     for (i,t) in enumerate(idxs)
-        # Calculate the log-probability of the action taken at time t with respect
-        # to the given policy π
+        # Calculate the current policy π log-probability of the action 
+        # chosen by the behaviour policy at time t
         logp = logprob(π, H.actions[t])
-        # Calculate the return estimate for time t 
-        # (as the multiplication between the IS weight and 
-        # the difference between the time t reward and 
-        # alpha * logp of the action given the policy)
-        # and store it in G
-        # Note: subtract the entropy from the reward to prevent being stuck
-        # in a local minimum;
+        # Calculate the return estimate at time t of the current policy action
+        # with the importance sampling method wrt the behaviour policy;
+        # the return is regularized by the current action entropy, to prevent 
+        # being stuck in a local minimum;
         G[i] = IS_weight(H.blogps[t], logp) * (H.rewards[t] - α * logp)
     end
 end

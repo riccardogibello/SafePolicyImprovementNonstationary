@@ -1,3 +1,5 @@
+using Printf
+
 struct AdamParams{T} <: Any where {T}
     α::T
     β1::T
@@ -65,7 +67,7 @@ This method optimizes the parameters given as input (i.e. "x zero") through the 
 
 g is the function used to perform the off-policy natural gradient method.
 
-x₀ is set to the parameters used to model the policy.
+x₀ is the parameters set used to model the policy.
 
 num_iters is the number of times the optimization must be run, calculated before as a percentage.
 """
@@ -77,14 +79,25 @@ function optimize(params::AdamParams, g!, x₀, num_iters=100)
     fill!(G, 0.0)
     # Copy the initial theta parameter vector
     x = deepcopy(x₀)
-    # For each iteration that must be performed
+    # For each iteration that must be performed to 
+    # optimize the policy (i.e., the G vector, which is the set to x)
     for i in 1:num_iters
+        print("#######################################\n")
+        print("Iteration ", i, "\n")
+        print("Before optimization: \n")
+        print("Old policy parameters (x): ", Printf.format.(Ref(Printf.Format("%.2f")), x), "\n")
+        print("New policy parameters (G): ", Printf.format.(Ref(Printf.Format("%.2f")), G), "\n")
+        
         # Perform the off-policy natural gradient method 
-        # to optimize the policy parameters
-        g!(G, x)
-        println(i, " ", G)
-        # Peform the Adam optimization method to 
-        # update the policy parameters
+        # to optimize the policy parameters contained in x vector
+        g!(G, x)        
+        
+        print("After optimization: \n")
+        print("Old policy parameters (x): ", Printf.format.(Ref(Printf.Format("%.2f")), x), "\n")
+        print("New policy parameters (G): ", Printf.format.(Ref(Printf.Format("%.2f")), G), "\n")
+        print("#######################################\n")
+        # Peform the Adam optimization method to update the policy parameters
+        # stored in x by using the gradient values
         update!(params, x, G)
     end
 

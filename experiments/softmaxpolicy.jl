@@ -76,7 +76,11 @@ gradient of the log probability of the action with respect to the policy paramet
 
 action is the index of the action that was chosen by the policy.
 """
-function gradient_logp!(grad, π::StatelessSoftmaxPolicy, action::Int)
+function gradient_logp!(
+    grad, 
+    π::StatelessSoftmaxPolicy, 
+    action::Int
+)
     # Set the gradient vector to zero
     fill!(grad, 0.)
     # Find the value of the log probability of the given action, different
@@ -85,7 +89,7 @@ function gradient_logp!(grad, π::StatelessSoftmaxPolicy, action::Int)
 
     # Subtract, from each value of the gradient vector (i.e., derivative
     # with respect to the specific input action, set all to zero), 
-    # the probabilities of all actions from the gradient
+    # the probabilities of all actions
     grad .-= π.probs
     # Add 1 to the gradient of the chosen action, since it is the one having
     # more influence on the output
