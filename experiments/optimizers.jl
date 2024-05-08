@@ -1,10 +1,21 @@
 using Printf
 
 struct AdamParams{T} <: Any where {T}
+    # Learning rate, which determines the step size at each iteration while 
+    # moving towards a minimum of a loss function.
     α::T
+
+    # Decay rate of the moving average of the gradients.
     β1::T
+
+    # Decay rate of the moving average of the squared gradients.
     β2::T
+
+    # A small constant to avoid division by zero when the moving 
+    # average of the squared gradient is very small.
     ϵ::T
+
+    # Time step used in the calculation of the moving averages of the gradients.
     t::Array{Int,1}
 
     # Moving average of the gradients, which represents the mean direction of the gradients.
@@ -17,10 +28,16 @@ struct AdamParams{T} <: Any where {T}
     Δ::Array{T}
 
     function AdamParams(x, α::T; β1::T = 0.9, β2::T = 0.999, ϵ::T =1e-8) where {T}
+        # Get the type of the x parameter (containing the theta values describing the policy),
+        # which will correspond to the type of the learning rate
         tp = eltype(x)
         m = zeros(tp, size(x))
         v = zeros(tp, size(x))
         Δ = zeros(tp, size(x))
+        # Cast the value of the learning rate to the type of 
+        # the theta parameter vector (should be float)
+        # TODO MSG here the learning rate is set to 0.01, but in the paper
+        # it is set to 10^-1
         new{tp}(tp(α), β1, β2, ϵ, [0], m, v, Δ)
     end
 end
@@ -65,13 +82,20 @@ end
 """
 This method optimizes the parameters given as input (i.e. "x zero") through the Adam parameters.
 
+params is the Adam parameters used to optimize the policy.
+
 g is the function used to perform the off-policy natural gradient method.
 
 x₀ is the parameters set used to model the policy.
 
 num_iters is the number of times the optimization must be run, calculated before as a percentage.
 """
-function optimize(params::AdamParams, g!, x₀, num_iters=100)
+function optimize(
+    params::AdamParams, 
+    g!, 
+    x₀, 
+    num_iters=100
+)
     # Initialize a vector with the same size 
     # as the theta parameter vector (describing the policy)
     G = similar(x₀)
@@ -80,7 +104,8 @@ function optimize(params::AdamParams, g!, x₀, num_iters=100)
     # Copy the initial theta parameter vector
     x = deepcopy(x₀)
     # For each iteration that must be performed to 
-    # optimize the policy (i.e., the G vector, which is the set to x)
+    # optimize the policy (i.e., the G vector, 
+    # which is the set to x)
     for i in 1:num_iters
         print("#######################################\n")
         print("Iteration ", i, "\n")
@@ -96,7 +121,7 @@ function optimize(params::AdamParams, g!, x₀, num_iters=100)
         print("Old policy parameters (x): ", Printf.format.(Ref(Printf.Format("%.2f")), x), "\n")
         print("New policy parameters (G): ", Printf.format.(Ref(Printf.Format("%.2f")), G), "\n")
         print("#######################################\n")
-        # Peform the Adam optimization method to update the policy parameters
+        # Peform the Adam optimization update on the policy parameters
         # stored in x by using the gradient values
         update!(params, x, G)
     end

@@ -199,7 +199,25 @@ function off_policy_natgrad_bs!(
     G .= inv(F) * G
 end
 
-function off_policy_natgrad_bs!(G, θ, Y, GY, ψ, F, π::StatelessNormalPolicy, D::BanditHistory{T,TA}, idxs, A, B, δ, num_boot, aggf, λ, IS::TI, rng) where {T,TA,TI<:UnweightedIS}
+function off_policy_natgrad_bs!(
+    G, 
+    θ, 
+    Y, 
+    GY, 
+    ψ, 
+    F, 
+    π::StatelessNormalPolicy, 
+    D::BanditHistory{T,TA}, 
+    idxs, 
+    A, 
+    B,
+    δ, 
+    num_boot, 
+    aggf, 
+    λ, 
+    IS::TI, 
+    rng
+) where {T,TA,TI<:UnweightedIS}
     set_params!(π, θ)
     compute_fisher!(F, ψ, π)
 

@@ -82,14 +82,14 @@ function optimize_nsdbandit_safety(
 )
     # Create a new BanditHistory object to store the history of the bandit problem
     D = BanditHistory(Float64, Int)
-    # Set the payoffs for the arms of the bandit problem
+    # Set the payoffs for each of the actions of the bandit problem
     arm_payoffs = [1.0, 0.8, 0.6, 0.4, 0.2]
-    # Set the array of frequencies for the arms of the bandit problem
+    # Set the array of frequencies for each action of the bandit problem
     arm_freq = zeros(length(arm_payoffs))
     # if the problem is stationary
     if speed == 0
         # set the value that modifies the frequency of the sin seasonal term to 0
-        κ = 0 #(2*pi)/1500.0
+        κ = 0
     # otherwise, set an increasing frequency of the sin seasonal term as the speed increases
     elseif speed == 1
         κ = (2*pi)/2000.0
@@ -101,15 +101,14 @@ function optimize_nsdbandit_safety(
         println("speed $speed not recognized")
         return nothing
     end
-    # Assign the frequency of the arms to the value stored in κ for each value in the array
+    # Set the frequency of all the actions to the value stored in κ
     arm_freq .= κ
     # Create a new arm_k array, uninitialized, with the same length as the arm_freq array
     arm_k = similar(arm_freq)
     # Assign to each element of arm_k the value of pi/2
     arm_k .= pi/2
-    # Add to each element of the arm_k array the element-wise product between 2*pi/5 and the array on the right
-    # The array on the left is made that the sin seasonal term has, at the same time, different values
-    # for the different arms
+    # Add to each element of the arm_k array the element-wise product between 2*pi/5 and the array on the right;
+    # arm_k stores a different seasonal term for each of the bandit actions
     arm_k .+= (2*pi/5) .* [0.0, 1.0, 2.0, 3.0, 4.0]
     # Create a new array of ones with the same length as the arm_payoffs array
     # that represents the noise for each arm payoff
@@ -120,18 +119,15 @@ function optimize_nsdbandit_safety(
     env = NonStationaryDiscreteBanditParams(
         # arm_payoffs contains the payoffs of each arm
         arm_payoffs,
-        # arm_sigma contains TODO 
+        # arm_sigma contains the noise of each arm payoff
         arm_sigma,
-        # arm_freq contains the frequencies of the seasonal sin term
+        # arm_freq contains the seasonal frequency that affects the return of each action
         arm_freq,
-        # arm_k contains the horizontal shifts of the seasonal sin term
+        # arm_k contains the horizontal shifts of the seasonal sin term that affects the return of each action
         arm_k,
         # t contains the current timestep of the bandit problem
         [0.0]
     )
-
-    # TODO this seems to be useless because the values are statically reassigned
-    # θ = deepcopy(arm_payoffs) .* 0.4
 
     # Set the theta values, that are the policy parameters, for each arm
     θ = [2.0, 1.5, 1.2, 1.0, 1.0]
@@ -139,7 +135,8 @@ function optimize_nsdbandit_safety(
     # Create a new policy pi to choose among the arm_payoffs
     π = StatelessSoftmaxPolicy(Float64, length(arm_payoffs))
     # Set the parameters of the policy to the θ values 
-    # (and consequently, the action probabilities)
+    # (and consequently, the action probabilities 
+    # as a softmax of the θ values)
     set_params!(π, θ)
     # Clone the built policy and assign it to πsafe
     πsafe = clone(π)
@@ -153,7 +150,8 @@ function optimize_nsdbandit_safety(
     oparams = AdamParams(get_params(π), 1e-2; β1=0.9, β2=0.999, ϵ=1e-5)
     # τ = num_steps to optimize for future performance and to collect data for
     τ, λ, opt_ratio, fb_order = hyperparams
-    δ = 0.05 # percentile lower bound to maximize future (use 1-ϵ for upper bound)
+    # Set the δ percentile lower bound to maximize future (use 1-ϵ for upper bound)
+    δ = 0.05 
     # aggf = mean # function to aggregate future performance over (e.g., mean over τ steps,) 
     #               maximium and minimum are also useful
     IS = PerDecisionImportanceSampling()

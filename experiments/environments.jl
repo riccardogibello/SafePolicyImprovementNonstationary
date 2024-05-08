@@ -17,10 +17,15 @@ struct DiscreteBanditParams{T} <: AbstractDiscreteBandit where {T}
 end
 
 struct NonStationaryDiscreteBanditParams{T} <: AbstractDiscreteBandit where {T}
+    # Mean reward of each action
     μ::Array{T,1}
+    # Standard deviation of each action
     σ::Array{T,1}
+    # Seasonal frequency of each action
     τ::Array{T,1}
+    # Phase shift of each action
     k::Array{T,1}
+    # Timestamp of the bandit problem
     t::Array{T,1}
 end
 
