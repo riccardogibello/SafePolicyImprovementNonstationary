@@ -1,5 +1,10 @@
 import Base:length,push!
 
+# TODO this is required in order to avoid the following warning;
+# then, in any file, you must use import of the file + using
+# e.g. include("history.jl"); using .history: BanditHistory
+# module history 
+# export BanditHistory, Trajectory, History, length, push!, log_eval, collect_data!
 
 # Define a struct to hold the history of a bandit problem.
 # <: is the subtype operator, which is used to define a new type as a subtype of an existing type;

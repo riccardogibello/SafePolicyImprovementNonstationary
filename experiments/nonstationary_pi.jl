@@ -162,7 +162,7 @@ function off_policy_natgrad_bs!(
     # Populate the Y array with the estimated returns of the policy π wrt the history D
     # and the behavior policy
     estimate_entropyreturn!(Y, D, idxs, π, λ, IS)
-    print("Updated value of the Y vector: ", Printf.format.(Ref(Printf.Format("%.2f")), Y), "\n")
+    # print("Updated value of the Y vector: ", Printf.format.(Ref(Printf.Format("%.2f")), Y), "\n")
     # Compute (and store in GY) the gradients of the specified function, evaluated in 
     # the expected past returns (Y vector); the result is the vector containing
     # the gradients;

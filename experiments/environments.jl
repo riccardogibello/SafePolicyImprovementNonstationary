@@ -55,12 +55,18 @@ function eval_policy(b::NonstationaryQuadraticBanditParams{T}, π::StatelessNorm
     return J
 end
 
-function eval_policy(b::T, π::StatelessSoftmaxPolicy) where {T <: AbstractDiscreteBandit}
+function eval_policy(
+    b::T, 
+    π::StatelessSoftmaxPolicy
+) where {T<:AbstractDiscreteBandit}
     # Given the environment b and the policy π, evaluate the policy by taking the expected value of the rewards
     return eval_policy(b, π.probs)
 end
 
-function eval_policy(b::NonStationaryDiscreteBanditParams{T}, p::Array{T2}) where {T,T2}
+function eval_policy(
+    b::NonStationaryDiscreteBanditParams{T}, 
+    p::Array{T2}
+) where {T,T2}
     J = 0.0
     # Take the first timestep number (ZERO at the beginning of the episode)
     t = b.t[1]

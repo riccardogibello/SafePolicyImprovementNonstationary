@@ -107,20 +107,20 @@ function optimize(
     # optimize the policy (i.e., the G vector, 
     # which is the set to x)
     for i in 1:num_iters
-        print("#######################################\n")
+        """print("#######################################\n")
         print("Iteration ", i, "\n")
         print("Before optimization: \n")
         print("Old policy parameters (x): ", Printf.format.(Ref(Printf.Format("%.2f")), x), "\n")
         print("New policy parameters (G): ", Printf.format.(Ref(Printf.Format("%.2f")), G), "\n")
-        
+        """
         # Perform the off-policy natural gradient method 
         # to optimize the policy parameters contained in x vector
         g!(G, x)        
         
-        print("After optimization: \n")
+        """print("After optimization: \n")
         print("Old policy parameters (x): ", Printf.format.(Ref(Printf.Format("%.2f")), x), "\n")
         print("New policy parameters (G): ", Printf.format.(Ref(Printf.Format("%.2f")), G), "\n")
-        print("#######################################\n")
+        print("#######################################\n")"""
         # Peform the Adam optimization update on the policy parameters
         # stored in x by using the gradient values
         update!(params, x, G)

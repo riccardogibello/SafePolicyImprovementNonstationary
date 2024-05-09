@@ -5,13 +5,16 @@ using DataFrames
 using CSV
 using ArgParse
 using Distributions
+using Plots
 
 
 include("normalpolicy.jl")
 include("softmaxpolicy.jl")
-include("history.jl")
+
 include("optimizers.jl")
 include("offpolicy.jl")
+
+include("history.jl")
 
 include("environments.jl")
 include("nonstationary_modeling.jl")
@@ -116,7 +119,7 @@ function optimize_nsdbandit_safety(
     arm_sigma .*= 0.05
 
     # Create a new NonStationaryDiscreteBanditParams object with the arm_payoffs, arm_sigma, arm_freq, and arm_k arrays
-    env = NonStationaryDiscreteBanditParams(
+    env:: NonStationaryDiscreteBanditParams = NonStationaryDiscreteBanditParams(
         # arm_payoffs contains the payoffs of each arm
         arm_payoffs,
         # arm_sigma contains the noise of each arm payoff
@@ -196,6 +199,9 @@ function optimize_nsdbandit_safety(
     # the data for the bandit problem
     sample_fn(D, π, N) = collect_data!(D, π, log_fn, N, rng)
     # ===========================================================
+    # Calculate the number of iterations to run the policy optimization algorithm
+    # as the total number of timesteps to be run divided by tau (i.e., the number of
+    # timesteps added at each iteration)
     num_iters = num_episodes / τ
     train_idxs = Array{Int, 1}()
     test_idxs = Array{Int, 1}()
@@ -219,45 +225,80 @@ function optimize_nsdbandit_safety(
     res = save_results(fpath, rec, D.rewards, tidx, piflag, save_res)
     # display(plot_results(rec, D.rewards, tidx, piflag, "NS Discrete Entropy"))
     return res
+    # TODO this is actually the needed return value for printing the learning curves
     # return (rec, D.rewards, tidx, piflag)
 end
 
+"""
+This method receives as input the results of the previous experiments 
+(i.e., the record data structures, the reward values from the bandit, 
+the start and end timesteps on any interaction of the agent with the environment (i.e. start - end = tau), 
+and the flags indicating if the policy computed was used against the safe one).
+
+
+The result given by the method is composed by timestamps, 
+the mean and standard deviation of the unsafe policy, the mean and standard deviation 
+of the found policy, the mean and standard deviation of the performance,
+and the mean and standard deviation of the performance of the algorithm.
+"""
 function combine_trials(
     results
 )
     T = length(results)
     N = length(results[1][2])
+
+    # Take the list of timestamps of the first experiment (they are the same for all the experiments)
     t = results[1][1].t
+    
+    # Initialize matrices with NxT dimension
     unsafe = zeros((N, T))
     notnsf = zeros((N, T))
     Jpi = zeros((N, T))
     Jalg = zeros((N, T))
-    for (k, (rec, rews, tidxs, piflag)) in enumerate(results)
+
+    # For each of the results of the trials (k is the index of the trial)
+    for (k, (rec, _, tidxs, piflag)) in enumerate(results)
         unf = zeros(N)
         nnsf = zeros(N)
+        # For each starting and ending timestep in the tidxs array
         for (i, (ts, te)) in enumerate(tidxs)
+            # If the computed new policy was used against the 
+            # safe one (i.e., passed the safety test)
             if piflag[i]
+                # Set to 1 the values of the notnsf array from the start to the end timestep
                 nnsf[ts:te] .= 1
+                # If the mean return of the safe policy would have been higher than the one of the computed policy
                 if mean(rec.Jsafe[ts:te]) > mean(rec.Jpi[ts:te])
+                    # Set to 1 the values of the unsafe array from the start to the end timestep
                     unf[ts:te] .= 1
                 end
             end
         end
+        # Update the unsafe matrix by adding, as k-th column, the values of the unf array
         @. unsafe[:, k] = unf
+        # Update the notnsf matrix by adding, as k-th column, the values of the nnsf array
         @. notnsf[:, k] = nnsf
+        # Update the Jpi matrix by adding, as k-th column, the values of the Jpi array of the k-th trial
         @. Jpi[:, k] += rec.Jpi
+        # Update the Jalg matrix by adding, as k-th column, the linear combination of the performances 
+        # of the safe and computed policies (based on when each of them was adopted).
         @. Jalg[:, k] += nnsf * rec.Jpi + (1 - nnsf) * rec.Jsafe
     end
 
+    # Perform the mean across the second dimension of each matrix (i.e., across experiments), creating
+    # a set of 1D vectors (the standard deviation vectors are divided by the square root of the number of trials);
+    # mnunsafe = % of times, for each timestep, that the computed policy was used against the safe one but had a lower return
     mnunsafe = vec(mean(unsafe, dims=2))
     stdunsafe = vec(std(unsafe, dims=2)) ./ √T
+    # mnfound = % of times, for each timestep, that the computed policy was used against the safe one
     mnfound = vec(mean(notnsf, dims=2))
     stdfound = vec(std(notnsf, dims=2)) ./ √T
+    # mnJpi = mean performance of the computed policy
     mnJpi = vec(mean(Jpi, dims=2))
     stdJpi = vec(std(Jpi, dims=2)) ./ √T
+    # mnJalg = mean performance of the computed policy if it was used, otherwise the safe policy
     mnJalg = vec(mean(Jalg, dims=2))
     stdJalg = vec(mean(Jalg, dims=2)) ./ √T
-    # println(size(mnunsafe), " ", size(stdunsafe), " ", size(unsafe))
     return t, (mnunsafe, stdunsafe), (mnfound, stdfound), (mnJpi, stdJpi), (mnJalg, stdJalg)
 end
 
@@ -287,11 +328,34 @@ function learning_curves(res1, res2, baseline, labels, title)
     xlabel!(p2, "Episode")
     ylabel!(p2, "Probability")
     p = plot(p1, p2, layout=(2,1))
-    savefig(p, "learningcurve.pdf")
+    savefig(p, "plots/learningcurve.pdf")
     return p
 end
 
-function save_results(fpath, rec::SafetyPerfRecord, rews, tidxs, piflag, save_res=true)
+"""
+This method saves the results of the given experiment.
+
+fpath: the path to the file where the results will be saved.
+
+rec: the record of the performance of the policy.
+
+rews: an array of the rewards obtained at each timestep and 
+stored in the bandit history.
+
+piflag: an array of booleans that specify whether, at each timestep, 
+the safe policy was used because the computed one was unsafe.
+
+save_res: a boolean that specifies whether the results should be saved
+in a CSV file.
+"""
+function save_results(
+    fpath, 
+    rec::SafetyPerfRecord, 
+    rews, 
+    tidxs, 
+    piflag, 
+    save_res=true
+)
     unsafe = zeros(length(rews))
     notnsf = zeros(length(rews))
     for (i, (ts, te)) in enumerate(tidxs)
@@ -331,7 +395,6 @@ function logRand(low, high, rng)
     X = exp(random_value)
     # PDF: 1 / ( X * log(high / low) )
     # log-PDF: -log(X) - log(log(high) - log(low))
-    # 
 
     # Calculate the log-probability of X, which is calculated between log(low) and log(high)
     # TODO: log(high) - log(high) will always be 0, shouldn't it be log(high) - log(low)
@@ -362,8 +425,7 @@ function sample_ns_hyperparams(rng)
 end
 
 function sample_stationary_hyperparams(rng)
-    # TODO what are these parameters?
-    # Pick one of the values from the list [2,4,6,8]
+    # Set the batch size that is used in the candidate search
     τ = rand(rng, [2,4,6,8])
     # Pick a random number between 0.00005 and 1.0 for
     # the entropy regularizer
@@ -379,8 +441,31 @@ function sample_stationary_hyperparams(rng)
 end
 
 
-# Function to run a sweep of trials for a given algorithm
-function runsweep(seed, algname, save_dir, trials, speed, num_episodes)
+"""
+This method runs, for trials times, the sampling of the hyperparameters and the optimization of the
+(non-stationary) bandit safety problem. The results are saved in a unique CSV file.
+
+seed: the seed for the random number generator, to enable reproducibility of the results.
+
+algname: the name of the algorithm that is used to optimize the bandit safety problem 
+(either "stationary" or "nonstationary").
+
+save_dir: the directory where the results will be saved.
+
+trials: the number of trials to run.
+
+speed: the speed of non-stationarity of the bandit problem.
+
+num_episodes: the number of total timesteps that must be contained in each experiment.
+"""
+function runsweep(
+    seed, 
+    algname, 
+    save_dir, 
+    trials, 
+    speed, 
+    num_episodes
+)
     # Initialize a random number generator with the provided seed
     rng = Random.MersenneTwister(seed)
 
@@ -410,7 +495,13 @@ function runsweep(seed, algname, save_dir, trials, speed, num_episodes)
         end
 
         # Run the optimization for the non-stationary bandit safety problem
-        res = optimize_nsdbandit_safety(num_episodes, rng, speed, hyps, "nopath.csv", false)
+        res = optimize_nsdbandit_safety(
+            num_episodes, 
+            rng, speed, 
+            hyps, 
+            "nopath.csv", 
+            false
+        )
 
         # Join the hyperparameters and results into a single string
         result = join([hyps..., res...], ',')
@@ -423,26 +514,91 @@ function runsweep(seed, algname, save_dir, trials, speed, num_episodes)
     end
 end
 
-function tmp(num_episodes, speed)
-    # hyps = (Int(2), 0.06125, 3.0, Int(3))
-    num_trials = 30
-    hyps = (Int(4), 0.125, 3.0, Int(3))
+function tmp(
+    num_episodes, 
+    speed
+)
+    # Build the "plots" folder, if not already existing
+    if !isdir("plots")
+        mkdir("plots")
+    end
+    # Set this random number generator seed for reproducibility
     rng = MersenneTwister(0)
-    recs1 = [optimize_nsdbandit_safety(num_episodes, rng, speed, hyps, "nopath.csv", false) for i in 1:num_trials]
 
-    hyps = (Int(4), 0.125, 3.0, Int(0))
-    # rng = MersenneTwister(0)
-    recs2 = [optimize_nsdbandit_safety(num_episodes, rng, speed, hyps, "nopath.csv", false) for in in 1:num_trials]
+    # Set the number of experiment trials to 30
+    num_trials = 2 # 30 # TODO in the paper they specified that this is 10 for the RecSys experiment
+
+    # NONSTATIONARY CASE
+    # Set the hyperparameters: batch size, entropy regularizer, optimization ratio, and Fourier basis order
+    hyps = sample_ns_hyperparams(rng) # TODO before: (Int(4), 0.125, 3.0, Int(3))
+    recs1 = [
+        optimize_nsdbandit_safety(
+            num_episodes, 
+            rng, 
+            speed, 
+            hyps, 
+            "nopath.csv", 
+            false
+            ) 
+            for _ in 1:num_trials
+    ]
+    
+    # STATIONARY CASE
+    # Set the hyperparameters: batch size, entropy regularizer, optimization ratio, and Fourier basis order
+    hyps = sample_stationary_hyperparams(rng) # TODO before: (Int(4), 0.125, 3.0, Int(0))
+    recs2 = [
+        optimize_nsdbandit_safety(
+            num_episodes, 
+            rng, 
+            speed, 
+            hyps, 
+            "nopath.csv", 
+            false
+            ) 
+            for _ in 1:num_trials
+    ]
 
     r1 = combine_trials(recs1)
     r2 = combine_trials(recs2)
+    
+    # Get the baseline value from the first trial of the first record (non stationary case)
     baseline = recs1[1][1].Jsafe
-    # println(size.([r1[1],  r1[2][1], r1[2][2], r1[3][1], r1[3][2], r1[4][1], r1[4][2], r1[5][1], r1[5][2], baseline]))
-    df1 = DataFrame(t = r1[1],  mnsafe = r1[2][1], stdsafe = r1[2][2], mnfound = r1[3][1], stdfound = r1[3][2], mnJpi = r1[4][1], stdJpi = r1[4][2], mnJalg = r1[5][1], stdJalg = r1[5][2], baseline=baseline)
-    CSV.write("nonstationary_learncurve.csv", df1)
-    df2 = DataFrame(t = r2[1],  mnsafe = r2[2][1], stdsafe = r2[2][2], mnfound = r2[3][1], stdfound = r2[3][2], mnJpi = r2[4][1], stdJpi = r2[4][2], mnJalg = r2[5][1], stdJalg = r2[5][2], baseline=baseline)
-    CSV.write("stationary_learncurve.csv", df2)
-    display(learning_curves(r2, r1, baseline, ["Baseline", "SPIN"], "Nonstationary Recommender System"))
+    println(size.([r1[1],  r1[2][1], r1[2][2], r1[3][1], r1[3][2], r1[4][1], r1[4][2], r1[5][1], r1[5][2], baseline]))
+    df1 = DataFrame(
+        t = r1[1],  
+        mnsafe = r1[2][1], 
+        stdsafe = r1[2][2], 
+        mnfound = r1[3][1], 
+        stdfound = r1[3][2], 
+        mnJpi = r1[4][1], 
+        stdJpi = r1[4][2], 
+        mnJalg = r1[5][1], 
+        stdJalg = r1[5][2], 
+        baseline=baseline
+    )
+    CSV.write("plots/nonstationary_learncurve.csv", df1)
+    df2 = DataFrame(
+        t = r2[1],  
+        mnsafe = r2[2][1], 
+        stdsafe = r2[2][2], 
+        mnfound = r2[3][1], 
+        stdfound = r2[3][2], 
+        mnJpi = r2[4][1], 
+        stdJpi = r2[4][2], 
+        mnJalg = r2[5][1], 
+        stdJalg = r2[5][2], 
+        baseline=baseline
+    )
+    CSV.write("plots/stationary_learncurve.csv", df2)
+    display(
+        learning_curves(
+            r2, 
+            r1, 
+            baseline, 
+            ["Baseline", "SPIN"], 
+            "Nonstationary Recommender System"
+        )
+    )
 end
 
 # Main function to run the experiments
@@ -522,7 +678,12 @@ function main()
     seed = id + seed
 
     # Run the sweep with the specified parameters
-    runsweep(seed, aname, save_dir, trials, speed, num_episodes)
+    # runsweep(seed, aname, save_dir, trials, speed, num_episodes)
+
+    # Evaluate the time needed to perform the next instruction
+    @time begin
+    tmp(num_episodes, speed)
+    end
 
 end
 

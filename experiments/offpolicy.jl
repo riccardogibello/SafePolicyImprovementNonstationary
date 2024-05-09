@@ -1,5 +1,7 @@
 using EvaluationOfRLAlgs
 
+include("history.jl")
+
 abstract type AbstractImportanceSampling end
 abstract type UnweightedIS <: AbstractImportanceSampling end
 abstract type WeightedIS <: AbstractImportanceSampling end

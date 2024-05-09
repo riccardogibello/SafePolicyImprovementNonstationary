@@ -129,4 +129,8 @@ dmypy.json
 .pyre/
 
 .vscode
+# Ignore all the output directories
+plots
 log_dir
+# Ignore any subfolder of experiments/data that does not contain the ".zip" suffix
+experiments/data/*[!.zip]/
