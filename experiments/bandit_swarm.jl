@@ -75,6 +75,7 @@ function record_perf!(rec::SafetyPerfRecord, eval_fn, t, πc, πsafe)
     push!(rec.Jsafe, eval_fn(πsafe))
 end
 
+# TODO ns is a bit misleading since it is called also for non-stationary problems, isn't it?
 function optimize_nsdbandit_safety(
     num_episodes,
     rng,
@@ -151,17 +152,20 @@ function optimize_nsdbandit_safety(
 
     # Set the parameters for the optimization algorithm (Adam)
     oparams = AdamParams(get_params(π), 1e-2; β1=0.9, β2=0.999, ϵ=1e-5)
-    # τ = num_steps to optimize for future performance and to collect data for
+    # τ = number of steps for which data are collected
     τ, λ, opt_ratio, fb_order = hyperparams
     # Set the δ percentile lower bound to maximize future (use 1-ϵ for upper bound)
-    δ = 0.05 
-    # aggf = mean # function to aggregate future performance over (e.g., mean over τ steps,) 
-    #               maximium and minimum are also useful
+    δ = 0.05
     IS = PerDecisionImportanceSampling()
 
     nboot_train = 200 # num bootstraps
     nboot_test = 500
-    num_opt_iters = round(Int, τ*opt_ratio)
+    # Set the number of times the optimization step is run on the policy parameters
+    # as the multiplication between the interaction steps (of each iteration, 
+    # i.e., num_episodes / τ) and the optimization ratio
+    num_opt_iters = round(Int, τ * opt_ratio)
+    # Set a number of preliminary steps in which the agent will interact with the environment
+    # prior to the safety optimization process
     warmup_steps = 20
     sm = SplitLastKKeepTest(0.25)  # Fraction of data samples to be used for training
     # Create nt, a function that takes a timestep value and normalizes it with respect to the
@@ -205,6 +209,8 @@ function optimize_nsdbandit_safety(
     num_iters = num_episodes / τ
     train_idxs = Array{Int, 1}()
     test_idxs = Array{Int, 1}()
+    # Perform the High Confidence Off-Policy Improvement (HICOPI) algorithm by using the given
+    # optimization and safety functions
     tidx, piflag = HICOPI!(
         oparams, 
         π, 
@@ -409,22 +415,19 @@ function logRand(low, high, rng)
     return X, logp
 end
 
-function sample_ns_hyperparams(rng)
-    # TODO what are these parameters?
-    # Pick one of the values from the list [2,4,6,8]
-    τ = rand(rng, [2,4,6,8])
-    # Pick a random number between 0.00005 and 1.0
-    λ = logRand(0.00005, 1.0, rng)[1]
-    # Pick a random number between 2 and 5
-    opt_ratio = rand(rng)*3 + 2
-    # Pick a random number between 1 and 4 (inclusive) for the Fourier basis order
-    fb_order = rand(rng, 1:4)
-    # Return the sampled hyperparameters as a tuple in which tau and fborder are rounded to integers
-    params = (round(Int, τ), λ, opt_ratio, round(Int, fb_order))
-    return params
-end
+"""
+This method samples the hyperparameters for the optimization of the bandit safety problem.
+These are the batch size, the entropy regularizer, the value used to calculate the 
+number of new samples collected for each iteration for the policy optimization step, 
+and the Fourier basis order used to model the bandit performances.
 
-function sample_stationary_hyperparams(rng)
+speed: the speed of non-stationarity of the bandit problem.
+rng: the random number generator used to sample the hyperparameters.
+"""
+function sample_hyperparams(
+    speed::Int,
+    rng
+)
     # Set the batch size that is used in the candidate search
     τ = rand(rng, [2,4,6,8])
     # Pick a random number between 0.00005 and 1.0 for
@@ -432,9 +435,15 @@ function sample_stationary_hyperparams(rng)
     λ = logRand(0.00005, 1.0, rng)[1]
     # Pick a random number between 2 and 5
     opt_ratio = rand(rng)*3 + 2
-    # Set the Fourier basis order to 0 (i.e., no change in the environment is needed,
-    # therefore the only component is the constant one)
-    fb_order = 0
+    # If the speed is zero (i.e., stationary environment)
+    if speed == 0
+        # Set the Fourier basis order to 0 (i.e., no change in the environment is needed,
+        # therefore the only component is the constant one)
+        fb_order = 0
+    # Otherwise, set the Fourier basis order to a random number between 1 and 4
+    else
+        fb_order = rand(rng, 1:4)
+    end
     # Return the sampled hyperparameters as a tuple in which tau and fborder are rounded to integers
     params = (round(Int, τ), λ, opt_ratio, round(Int, fb_order))
     return params
@@ -484,20 +493,28 @@ function runsweep(
     flush(file)
 
     # Loop over the number of trials
-    for trial in 1:trials
+    for _ in 1:trials
+        # TODO shouldn't I check that algname and speed does not conflict? (e.g., stationary and speed > 0)
         # If the algorithm name is "stationary"
         if algname == "stationary"
             # sample stationary hyperparameters
-            hyps = sample_stationary_hyperparams(rng)
+            hyps = sample_hyperparams(
+                speed,
+                rng
+            )
         else
             # Otherwise, sample non-stationary hyperparameters
-            hyps = sample_ns_hyperparams(rng)
+            hyps = sample_hyperparams(
+                speed,
+                rng
+            )
         end
 
         # Run the optimization for the non-stationary bandit safety problem
         res = optimize_nsdbandit_safety(
             num_episodes, 
-            rng, speed, 
+            rng, 
+            speed, 
             hyps, 
             "nopath.csv", 
             false
@@ -530,7 +547,10 @@ function tmp(
 
     # NONSTATIONARY CASE
     # Set the hyperparameters: batch size, entropy regularizer, optimization ratio, and Fourier basis order
-    hyps = sample_ns_hyperparams(rng) # TODO before: (Int(4), 0.125, 3.0, Int(3))
+    hyps = sample_hyperparams(
+        speed,
+        rng
+    ) # TODO before: (Int(4), 0.125, 3.0, Int(3))
     recs1 = [
         optimize_nsdbandit_safety(
             num_episodes, 
@@ -545,7 +565,10 @@ function tmp(
     
     # STATIONARY CASE
     # Set the hyperparameters: batch size, entropy regularizer, optimization ratio, and Fourier basis order
-    hyps = sample_stationary_hyperparams(rng) # TODO before: (Int(4), 0.125, 3.0, Int(0))
+    hyps = sample_hyperparams(
+        0,
+        rng
+    ) # TODO before: (Int(4), 0.125, 3.0, Int(0))
     recs2 = [
         optimize_nsdbandit_safety(
             num_episodes, 
@@ -678,7 +701,7 @@ function main()
     seed = id + seed
 
     # Run the sweep with the specified parameters
-    # runsweep(seed, aname, save_dir, trials, speed, num_episodes)
+    runsweep(seed, aname, save_dir, trials, speed, num_episodes)
 
     # Evaluate the time needed to perform the next instruction
     @time begin

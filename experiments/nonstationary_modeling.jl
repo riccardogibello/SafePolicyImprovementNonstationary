@@ -106,23 +106,38 @@ function wildbs_CI(
     )
 end
 
+"""
+This method computes the coefficients of a non-stationary model.
+"""
 function get_coefst(Φ, ϕτ)
     H = pinv(Φ' * Φ) * Φ'
     W = Φ * H
     ϕ = ϕτ * H
+    # TODO what is this C matrix?
     C = I - W
     return W, ϕ, C
 end
 
+"""
+
+ϕ: the result of the product between the ϕτ and H.
+"""
 function get_preds_and_residual_t(Y, W, ϕ, C)
-    Ŷ = W*Y
+    # Calculate the predicted Y values starting from the W and the observed Y
+    # Ŷ = Φ * H * Y = W * Y
+    Ŷ = W * Y
+    # Calculate the predicted performances (later on the mean is computed)
     y = ϕ * Ŷ
     x = C * Ŷ
     # Get the residuals between the observed and the predicted performances 
     ξ = Y .- Ŷ
-    # ϕ = is the product between ϕ_tau and H, that is used in predicting the performances
+    # Being ξ a vector of independent noises, the Diagonal(ξ.^2) is a diagonal matrix
+    # representing the co-variance matrix of the mean-zero and heteroscedastic noises ξ.
+    # Then, Σ corresponds to the Vf matrix of the paper because:
+    # Σ =   ϕτ * H * Diagonal(ξ.^2) * H' * ϕτ' = 
+    #       ϕτ * pinv(Φ' * Φ) * Φ' * Diagonal(ξ.^2) * Φ * pinv(Φ' * Φ) * ϕτ'
     Σ = ϕ * Diagonal(ξ.^2) * ϕ'
-    # Get the mean variance
+    # Get the mean variance of the errors
     v = mean(Σ)
     
     return y, v, x, ξ
@@ -139,16 +154,19 @@ function wildbst_eval(x, C, ξ, ϕ, σ)
 end
 
 
+# TODO this function is not used in the code
 function bst_CIs(p, v, bsamples, δ)
     return p - quantile(sort(bsamples), 1.0-δ, sorted=true) * √v
 end
 
+# TODO this function is not used in the code
 function bst_CIs(p, v, bsamples, δ::Array{T,1}) where {T}
     return p .- quantile(sort(bsamples), 1.0 .- δ, sorted=true) .* √v
 end
 
 function wildbst_CI(y, v, x, ξ, ϕ, C, δ, num_boot,rng)
     bsamples = [wildbst_eval(x, C, ξ, ϕ, sign.(randn(rng, length(ξ)))) for i in 1:num_boot]
+    # Calculate the mean of the predicted performances (line 5 of Algorithm 1 in the pseudocode)
     p = mean(y)
     return p - quantile(sort(bsamples), 1.0-δ, sorted=true) * √v #bst_CIs(p, v, bsamples, δ)
 end
@@ -161,19 +179,20 @@ end
 end
 
 """
-create features for time series using basis function ϕ,
-for observed time points x, and future time points tau
+This method, using basis function ϕ, creates the feature matrices of the 
+observed test time points x, and future time points τ (shifted of the previous 
+L time points).
 
-The phi function is the fourier transform function (see below), 
-    that accepts a scalar x and returns a vector of |C| length,
-    containing the element-wise cosine of the product between C and x.
-
-The x vector contains the 
+ϕ: the fourier transform function (see "fourierseries" method), that accepts a scalar 
+(i.e. element of x vector) and returns a vector of |C| length, containing the 
+element-wise cosine of the product between C and x.
+x: the observed test time points indices.
+τ: the future time points indices.
 """
 function create_features(ϕ, x, τ)
-    # Create the omega matrix, by applying the function phi to each scalar in x; every result of 
-    # this, is concatenated horizontally to form a matrix; the ' is the transposition operator,
-    # so each feature vector is a row;
+    # Create the omega matrix, by applying the function ϕ to each scalar in x and concatenating
+    # the results horizontally; 
+    # the ' is the transposition operator, so each feature vector is a row;
     Φ = hcat(ϕ.(x)...)'
     # Create the Fourier transform of the tau values (time points), in the same way as above
     ϕτ = hcat(ϕ.(τ)...)'

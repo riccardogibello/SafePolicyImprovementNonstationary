@@ -7,9 +7,40 @@ include("offpolicy.jl")
 include("highconfidence.jl")
 include("nonstationary_modeling.jl")
 
-function nswildbst_CI(π, δ, tail, D, idxs, ϕ, τ, num_boot, IS, rng)
+"""
+This method is used to calculate a non-stationary wild bootstrap confidence interval
+for a given policy π. The wild bootstrapping is a resampling technique used to estimate 
+the variability of an estimator when the errors are heteroscedastic 
+(i.e., the variability of the errors differs across observations).
+This method is called in the "HICOPI_step" method.
+
+π: the policy object used to interact with the environment.
+δ: the confidence level used to calculate the confidence interval.
+tail: the tail of the confidence interval (left, right, or both).
+D: the bandit history.
+idxs: the array of test timesteps from the bandit history.
+ϕ: the basis function that translates an integer (timestep) into a feature vector.
+τ: the number of future timesteps to consider.
+num_boot: the number of train samples used for bootstrapping the confidence interval.
+IS: the importance sampling method used to estimate the expected return of a given policy 
+    on samples which were drawn using a different policy.
+rng: the random number generator used to generate random numbers.
+"""
+function nswildbst_CI(
+    π, 
+    δ, 
+    tail, 
+    D, 
+    idxs, 
+    ϕ, 
+    τ, 
+    num_boot, 
+    IS, 
+    rng
+)
     L = length(D)
 
+    # Create the feature matrices of the test indices and of the future indices
     Φ, ϕτ = create_features(ϕ, idxs, collect(Float64, L+1:L+τ))
     A, B, C = get_coefst(Φ, ϕτ)
     
@@ -34,6 +65,7 @@ function nswildbst_CI(π, δ, tail, D, idxs, ϕ, τ, num_boot, IS, rng)
             num_boot, 
             rng
         )
+    # TODO is this case possible?
     elseif tail == :both
         return wildbst_CI(
             get_preds_and_residual_t(Y, A, B, C)..., 
@@ -50,6 +82,7 @@ function nswildbst_CI(π, δ, tail, D, idxs, ϕ, τ, num_boot, IS, rng)
     return
 end
 
+# TODO is this function even called?
 function nsbst_lower_grad(θ₀, D::BanditHistory{T,TA}, idxs, π, ϕ, τ, num_boot, δ, λ, IS::TI, rng) where {T,TA,TI<:UnweightedIS}
     L = length(D)
     N = length(idxs)
@@ -77,6 +110,7 @@ function nsbst_lower_grad(θ₀, D::BanditHistory{T,TA}, idxs, π, ϕ, τ, num_b
 end
 
 
+# TODO is this function even called?
 function nswildbs_CI(π, δ, tail, D, idxs, ϕ, τ, num_boot, aggf, IS, rng)
     L = length(D)
 
@@ -99,39 +133,26 @@ function nswildbs_CI(π, δ, tail, D, idxs, ϕ, τ, num_boot, aggf, IS, rng)
 end
 
 """
+This method (called in "optimize" method) is the implementation of the natural gradient
+method, a slight modification of the standard gradient method.
 
-G is the gradient vector used to update the policy parameters.
-
-θ is the vector containing the policy parameters.
-
-Y is the vector containing the estimated returns of the policy π wrt the history D and the behavior policy.
-
-ψ is a vector containing the gradients of the log probabilities of the actions.
-
-F is the Fisher Information matrix.
-
-π is keeps the data related to the policy used to interact with the environment.
-
-D is the bandit history.
-
-idxs is the array of training timesteps from the bandit history.
-
-A is the matrix containing the W matrix.
-
-B is the matrix containing the product between the ϕτ vector and the H matrix.
-
-δ is
-
-num_boot is the number of train samples used for bootstrapping the confidence interval.
-
-aggf is the aggregation function used to compute the confidence interval.
-
-λ is the entropy regularizer coefficient.
-
-IS is the importance sampling method used to estimate the expected return of a given policy 
+G: the natural gradient vector of the policy parameters to be populated.
+θ: the vector containing the policy parameters.
+Y: the vector containing the estimated returns of the policy π wrt the history D and the behavior policy.
+ψ: a vector containing the gradients of the log probabilities of the actions.
+F: the Fisher Information matrix.
+π: keeps the data related to the policy used to interact with the environment.
+D: the bandit history.
+idxs: the array of training timesteps from the bandit history.
+A: the matrix containing the W matrix.
+B: the matrix containing the product between the ϕτ vector and the H matrix.
+δ: the confidence interval used for the lower and upper bounds.
+num_boot: the number of train samples used for bootstrapping the confidence interval.
+aggf: the aggregation function used to compute the confidence interval.
+λ: the entropy regularizer coefficient.
+IS: the importance sampling method used to estimate the expected return of a given policy 
     on samples which were drawn using a different policy.
-
-rng is the random number generator used to generate random numbers.
+rng: the random number generator used to generate random numbers.
 """
 function off_policy_natgrad_bs!(
     G, 
@@ -145,7 +166,6 @@ function off_policy_natgrad_bs!(
     idxs, 
     A, 
     B,
-    # TODO MSG what is δ?
     δ, 
     num_boot, 
     aggf, 
@@ -156,16 +176,19 @@ function off_policy_natgrad_bs!(
     # Update the theta parameters of the policy by setting the current ones 
     set_params!(π, θ)
     # Compute the Fisher Information matrix, to identify how much the sample (bandit history) can explain
-    # the parameters of the policy
+    # the parameters of the policy; the Fisher information matrix measures the curvature of the parameter 
+    # space (areas of high curvature are dangerous, due to possibility to overshoot the minimum and diverge;
+    # areas of low curvature are safe, but convergence is slow).
     compute_fisher!(F, ψ, π)
     
     # Populate the Y array with the estimated returns of the policy π wrt the history D
     # and the behavior policy
     estimate_entropyreturn!(Y, D, idxs, π, λ, IS)
     # print("Updated value of the Y vector: ", Printf.format.(Ref(Printf.Format("%.2f")), Y), "\n")
-    # Compute (and store in GY) the gradients of the specified function, evaluated in 
-    # the expected past returns (Y vector); the result is the vector containing
-    # the gradients;
+    
+    # Compute the gradients of the "wildbs_CI" function, with respect to small changes 
+    # in the input Y (estimated returns with the importance sampling method); 
+    # GY is a vector of the same size of Y;
     GY .= Zygote.gradient(
         # Pass an anonymous function that takes a y argument (here Y) and passes it to the wildbs_CI function
         y->wildbs_CI(
@@ -185,17 +208,22 @@ function off_policy_natgrad_bs!(
     fill!(G, 0.0)
     # For each timestep used for training
     for (i,idx) in enumerate(idxs)
-        # Compute the gradient of the log probability of the action
+        # Compute the gradient of the log probability of the action and store it in the ψ vector
         gradient_logp!(ψ, π, D.actions[idx])
-        # Update the gradient vector by adding the product of the gradient of the log probability of the action
-        # and the expected return of the policy π wrt the history D and the behavior policy
-        # TODO MSG why this multiplication?
+        # Update the gradient vector by adding the product between: 
+        # 1) the gradient of the log probability of the actions
+        # 2) the estimated return of the policy π wrt the history D and the behavior policy
+        # 3) the gradient of the "wildbs_CI" function
         @. G += ψ * Y[i] * GY[i]
     end
+
     # Normalize the gradient by the number of timesteps used for training
     G ./= length(idxs)
 
-    # Multiply the inverse of the Fisher matrix by the gradient vector
+    # Pre-multiply the gradient with the inverse of the Fisher information matrix, 
+    # which is a measure of the curvature of the parameter space. 
+    # This adjusts the gradient (step size) in each direction according to the curvature, 
+    # which can lead to faster and more stable learning.
     G .= inv(F) * G
 end
 
@@ -273,14 +301,14 @@ end
 
 """
 This method returns a function that accepts two vectors of the same size of theta
-    and performs the off-policy natural gradient update (i.e., direction of change used
-    to update the policy parameters to improve the policy performance).
+and performs the off-policy natural gradient update (i.e., direction of change used
+to update the policy parameters to improve the policy performance).
 """
 function nsbs_lower_grad(
     θ₀, 
     D::BanditHistory{T,TA}, 
     idxs, 
-    π, 
+    π::StatelessSoftmaxPolicy, 
     ϕ, 
     τ, 
     num_boot, 
@@ -313,12 +341,49 @@ function nsbs_lower_grad(
 
     # If the old entropy must be used
     if old_ent
-        return (G, θ)->off_policy_natgrad_bs_old!(G, θ, Y, GY, ψ, F, π, D, idxs, A, B, δ, num_boot, aggf, λ, IS, rng)
+        return (G, θ)->off_policy_natgrad_bs_old!(
+            G, 
+            θ, 
+            Y, 
+            GY, 
+            ψ, 
+            F, 
+            π, 
+            D, 
+            idxs, 
+            A, 
+            B, 
+            δ, 
+            num_boot, 
+            aggf, 
+            λ, 
+            IS, 
+            rng
+        )
     else
-        return (G, θ)->off_policy_natgrad_bs!(G, θ, Y, GY, ψ, F, π, D, idxs, A, B, δ, num_boot, aggf, λ, IS, rng)
+        return (G, θ)->off_policy_natgrad_bs!(
+            G, 
+            θ, 
+            Y, 
+            GY, 
+            ψ, 
+            F, 
+            π, 
+            D, 
+            idxs, 
+            A, 
+            B, 
+            δ, 
+            num_boot, 
+            aggf, 
+            λ, 
+            IS, 
+            rng
+        )
     end
 end
 
+# TODO is this function even called?
 function maximum_entropy_fit(D::BanditHistory, idxs, π::StatelessNormalPolicy)
     adist = hcat(D.actions...)
     μ = mean(adist, dims=2)[:, 1]
@@ -326,7 +391,11 @@ function maximum_entropy_fit(D::BanditHistory, idxs, π::StatelessNormalPolicy)
     return vcat(μ, σ)
 end
 
-function compute_fisher!(F, ψ, π::StatelessSoftmaxPolicy)
+function compute_fisher!(
+    F,
+    ψ,
+    π::StatelessSoftmaxPolicy
+)
     fill!(F, 0.0)
     # Add a small constant to ensure stability
     F .= F + I*1e-4
@@ -343,7 +412,11 @@ function compute_fisher!(F, ψ, π::StatelessSoftmaxPolicy)
     end
 end
 
-function compute_fisher!(F, ψ, π::StatelessNormalPolicy)
+function compute_fisher!(
+    F,
+    ψ,
+    π::StatelessNormalPolicy
+)
     fill!(F, 0.0)
     N = length(π.σ)
     F[diagind(F)] .= vcat(π.σ..., 2.0*π.σ...)
@@ -357,7 +430,7 @@ idxs is the array of training timesteps from the bandit history.
 """
 function maximize_nsbs_lower!(
     params, 
-    π, 
+    π::StatelessSoftmaxPolicy, 
     D, 
     idxs, 
     ϕ, 
@@ -373,6 +446,7 @@ function maximize_nsbs_lower!(
 )
     # Get the theta parameters used to model the policy
     θ = get_params(π)
+    # Prepare the function that is used to perform the off-policy natural gradient bootstrap method
     g! = nsbs_lower_grad(
         θ, 
         D, 
@@ -389,14 +463,17 @@ function maximize_nsbs_lower!(
         old_ent, 
         rng
     )
-    # Optimize for the number of optimization iterations
+    # Optimize, for the number of optimization stepd, the parameters of the policy
     result = optimize(
         params, 
         g!, 
         θ, 
         num_iters
     )
+
+    # Set the updated policy parameters into the proper vector
     @. θ = result
+    # Update the policy data structure by setting the new parameters
     set_params!(π, θ)
 end
 
@@ -404,17 +481,17 @@ end
 """
 This function is used to build the natural policy gradient function and the confidence interval function.
 
-    ϕ is the basis function that translates an integer (timestep) into a feature vector.
-    τ is the number of future timesteps to consider.
-    nboot_train is the number of train samples used for bootstrapping the confidence interval.
-    nboot_test is the number of test samples used for bootstrapping the confidence interval.
-    δ is the percentile lower bound to maximize future.
-    λ is the entropy regularizer coefficient.
-    IS is the importance sampling method used to estimate the expected return of a given policy 
-        on samples which were drawn using a different policy.
-    old_ent is a boolean flag that indicates whether to use the old entropy calculation method.
-    num_iters is the number of times the optimization must be run, calculated before as a percentage (τ*opt_ratio).
-    rng is the random number generator used to generate random numbers.
+ϕ: the basis function that translates an integer (timestep) into a feature vector.
+τ: the number of future timesteps to consider.
+nboot_train: the number of train samples used for bootstrapping the confidence interval.
+nboot_test: the number of test samples used for bootstrapping the confidence interval.
+δ: the percentile lower bound to maximize future.
+λ: the entropy regularizer coefficient.
+IS: the importance sampling method used to estimate the expected return of a given policy 
+    on samples which were drawn using a different policy.
+old_ent: a boolean flag that indicates whether to use the old entropy calculation method.
+num_iters: the number of times the optimization must be run, calculated before as a percentage (τ*opt_ratio).
+rng: the random number generator used to generate random numbers.
 """
 function build_nsbst(
     ϕ, 
@@ -510,6 +587,7 @@ function off_policy_natgrad_old!(G, θ, Y, GY, ψ, F, π::StatelessNormalPolicy,
     G .= inv(F) * G
 end
 
+# TODO is this function even called?
 function ns_lower_grad(θ₀, D::BanditHistory{T,TA}, idxs, π, ϕ, τ, num_boot, δ, aggf, λ, IS::TI, old_ent, rng) where {T,TA,TI<:UnweightedIS}
     L = length(D)
     N = length(idxs)

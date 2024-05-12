@@ -83,16 +83,18 @@ function HICOPI_step!(
     πsafe, 
     δ
 )
-    # Optimize the π policy on the training data and using the optimization parameters
+    # Optimize the π policy parameters on the training data, using the optimization parameters,
+    # and all the other parameters previously passed to the function in "build_nsbst" method
     optimize_fn!(oparams, π, D, train_idxs)
 
     # If there is no test-data, then ignore the safety test_idxs
     # This can only happen when split ratio of train:test = 100:0
     if length(test_idxs) < 1
-        # :safe is a symbol; symbols in Julia are a type of scalar 
-        # that are often used to represent names of variables, functions, etc.
-        # Return that the kept policy must be the safe one
-        result = :safe
+        # Set the result to :safe, so that the new policy will be set to 
+        # the behaviour policy
+        # NOTE: symbols in Julia are a type of scalar that are often used to represent 
+        # names of variables, functions, etc.
+        result = :safe # set the result to safe symbol
     else
         # Get the result of the safety check
         result = HICOPI_safety_test(
@@ -113,9 +115,27 @@ function HICOPI_step!(
     end
 end
 
+"""
+This function is used by both the RecSys and Glucose experiments to perform the High Confidence Off-Policy Improvement.
+
+oparams: optimization parameters.
+π: policy to be optimized.
+D: bandit history.
+train_idxs: indices of the training set (to be populated during the interaction with the environment).
+test_idxs: indices of the test set (to be populated during the interaction with the environment).
+sample_fn!: function to sample data from the environment.
+optimize_fn!: function to optimize the policy.
+confidence_bound: function to compute the confidence bound.
+πsafe: safe policy.
+τ: number of steps to be performed with the current policy.
+δ: confidence level for the performances of the new (lower) and safe (upper) policy.
+split_method: method to split the data into training and test sets.
+num_iterations: number of optimization update steps to be performed.
+warmup_steps: number of warmup steps to be performed before starting the optimization.
+"""
 function HICOPI!(
     oparams, 
-    π, 
+    π:: Union{StatelessSoftmaxPolicy, StatelessNormalPolicy}, 
     D::BanditHistory, 
     train_idxs, 
     test_idxs, 
@@ -125,7 +145,7 @@ function HICOPI!(
     πsafe, 
     τ, 
     δ, 
-    split_method, 
+    split_method::Union{SplitLastK, SplitLastKKeepTest}, 
     num_iterations, 
     warmup_steps
 )
@@ -185,19 +205,25 @@ function HICOPI!(
             πsafe, 
             δ
         )
-        # If the current safety test does not allow to set the current policy pi as safe
+
+        # If the current safety test does consider the π policy to be safe
         if result == :NSF
-            # Keep the safe policy as the behavior policy
+            # Keep the πsafe as the πbehavior
             πbehavior = πsafe
             println("iteration $i π is not safe")
             using_pic = false
         else
-            # Otherwise, set the current policy as the behavior policy
+            # Otherwise, set the current π policy as the πbehavior
+            # TODO this could be set to "result", isn't it?
             πbehavior = π
             println("iteration $i π is safe")
             using_pic = true
         end
     end
+
+    # Return all the timesteps of interaction between the agent and the environment
+    # and the flab array, indicating at each timestep whether the policy improvement 
+    # condition was met
     return timeidxs, picflag
 end
 

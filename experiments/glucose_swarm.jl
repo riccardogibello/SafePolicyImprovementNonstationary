@@ -307,7 +307,13 @@ function optimize_nscbandit_safety(num_episodes, rng, speed, hyperparams, fpath,
         println("speed $speed not recognized")
         return nothing
     end
-    env = NonstationaryQuadraticBanditParams(1.0, -10.0, 0.010, κ, [1.0])
+    env:: NonstationaryQuadraticBanditParams = NonstationaryQuadraticBanditParams(
+        1.0,
+        -10.0,
+        0.010,
+        κ,
+        [1.0]
+    )
     # params = [1.0, -10, 0.10] #-0.01(ax + b)^2 + c * randn()
     θ = zeros(2)
     θ[1] = 8

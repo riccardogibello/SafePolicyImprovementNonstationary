@@ -42,8 +42,18 @@ struct AdamParams{T} <: Any where {T}
     end
 end
 
+"""
+This method performs the Adam optimization update on the policy parameters.
 
-function update!(opt::AdamParams, x, g)
+opt: is the Adam parameters used to optimize the policy.
+x: is the parameters set used to model the policy.
+g: is the gradient of the policy parameters.
+"""
+function update!(
+    opt::AdamParams,
+    x,
+    g
+)
     # Update the time step in the Adam parameters
     opt.t[1] += 1
     t, β1, β2, ϵ = opt.t[1], opt.β1, opt.β2, opt.ϵ
@@ -80,15 +90,12 @@ end
 
 
 """
-This method optimizes the parameters given as input (i.e. "x zero") through the Adam parameters.
+This method optimizes the parameters given as input (i.e. "x₀") through the Adam parameters.
 
-params is the Adam parameters used to optimize the policy.
-
-g is the function used to perform the off-policy natural gradient method.
-
-x₀ is the parameters set used to model the policy.
-
-num_iters is the number of times the optimization must be run, calculated before as a percentage.
+params: is the Adam parameters used to optimize the policy.
+g: is the function used to perform the off-policy natural gradient method.
+x₀: is the parameters set used to model the policy.
+num_iters: is the number of times the optimization must be run, calculated before as a percentage.
 """
 function optimize(
     params::AdamParams, 
@@ -106,7 +113,7 @@ function optimize(
     # For each iteration that must be performed to 
     # optimize the policy (i.e., the G vector, 
     # which is the set to x)
-    for i in 1:num_iters
+    for _ in 1:num_iters
         """print("#######################################\n")
         print("Iteration ", i, "\n")
         print("Before optimization: \n")
@@ -114,7 +121,8 @@ function optimize(
         print("New policy parameters (G): ", Printf.format.(Ref(Printf.Format("%.2f")), G), "\n")
         """
         # Perform the off-policy natural gradient method 
-        # to optimize the policy parameters contained in x vector
+        # to optimize the policy parameters contained in 
+        # x vector
         g!(G, x)        
         
         """print("After optimization: \n")

@@ -2,6 +2,11 @@ abstract type AbstractBandit end
 abstract type AbstractDiscreteBandit <: AbstractBandit end
 abstract type AbstractContinuousBandit <: AbstractBandit end
 
+"""
+This data structure models the bandit for the Glucose experiment.
+
+
+"""
 struct NonstationaryQuadraticBanditParams{T} <: AbstractContinuousBandit where {T}
     a::T
     b::T
@@ -10,12 +15,11 @@ struct NonstationaryQuadraticBanditParams{T} <: AbstractContinuousBandit where {
     t::Array{T,1}
 end
 
+"""
+This data structure models the bandit for the RecSys experiment.
 
-struct DiscreteBanditParams{T} <: AbstractDiscreteBandit where {T}
-    μ::Array{T,1}
-    σ::Array{T,1}
-end
 
+"""
 struct NonStationaryDiscreteBanditParams{T} <: AbstractDiscreteBandit where {T}
     # Mean reward of each action
     μ::Array{T,1}
@@ -29,11 +33,35 @@ struct NonStationaryDiscreteBanditParams{T} <: AbstractDiscreteBandit where {T}
     t::Array{T,1}
 end
 
-function sample_reward!(b::DiscreteBanditParams{T}, action::Int, rng) where {T}
-    return b.μ[action] + b.σ[action] * randn(rng)
+# TODO what is this used for?
+struct DiscreteBanditParams{T} <: AbstractDiscreteBandit where {T}
+    μ::Array{T,1}
+    σ::Array{T,1}
 end
 
-function sample_reward!(b::NonStationaryDiscreteBanditParams{T}, action::Int, rng) where {T}
+"""
+This is the method used in the Glucose experiment.
+
+"""
+function sample_reward!(
+    b::NonstationaryQuadraticBanditParams{T},
+    action,
+    rng
+) where {T}
+    r = -0.1*(b.a*action[1] + b.b*cos(b.t[1] * b.τ))^2 + b.c * randn(rng)
+    b.t[1] += 1.0
+    return r
+end
+
+"""
+This is the method used in the RecSys experiment.
+
+"""
+function sample_reward!(
+    b::NonStationaryDiscreteBanditParams{T}, 
+    action::Int, 
+    rng
+) where {T}
     # Calculate the expected reward of a particular action in the bandit problem (multiplying it by the 
     # seasonal term), and add a noise to it to perturb the value of the performance;
     r = b.μ[action] * sin(b.t[1] * b.τ[action] + b.k[action]) + b.σ[action] * randn(rng)
@@ -42,19 +70,34 @@ function sample_reward!(b::NonStationaryDiscreteBanditParams{T}, action::Int, rn
     return r
 end
 
-function sample_reward!(b::NonstationaryQuadraticBanditParams{T}, action, rng) where {T}
-    r = -0.1*(b.a*action[1] + b.b*cos(b.t[1] * b.τ))^2 + b.c * randn(rng)
-    b.t[1] += 1.0
-    return r
+# TODO is this even called? There is no instantiation of this type.
+function sample_reward!(
+    b::DiscreteBanditParams{T}, 
+    action::Int, 
+    rng
+) where {T}
+    return b.μ[action] + b.σ[action] * randn(rng)
 end
 
-function eval_policy(b::NonstationaryQuadraticBanditParams{T}, π::StatelessNormalPolicy) where {T,T2}
+"""
+This is the method used in the Glucose experiment.
+
+"""
+function eval_policy(
+    b::NonstationaryQuadraticBanditParams{T},
+    π::StatelessNormalPolicy
+) where {T,T2}
     t = b.t[1]
     μ, σ = π.μ[1], π.σ[1]
     J = -0.1*b.a^2^σ^2  + -0.1*(b.a*μ + b.b*cos(t * b.τ))^2
     return J
 end
 
+"""
+This is used in the RecSys experiment.
+
+"""
+# TODO cannot this be merged with the next method?
 function eval_policy(
     b::T, 
     π::StatelessSoftmaxPolicy
@@ -63,12 +106,19 @@ function eval_policy(
     return eval_policy(b, π.probs)
 end
 
+
+"""
+This is used in the RecSys experiment.
+
+
+"""
 function eval_policy(
     b::NonStationaryDiscreteBanditParams{T}, 
     p::Array{T2}
 ) where {T,T2}
     J = 0.0
-    # Take the first timestep number (ZERO at the beginning of the episode)
+    # Take the current timestep number, to properly calculate the return of the policy
+    # based on the seasonality of the bandit problem
     t = b.t[1]
     # For each i between 1 and the length of the probabilities of taking any of the actions
     for i in 1:length(p)
@@ -82,7 +132,11 @@ function eval_policy(
     return J
 end
 
-function eval_policy(b::DiscreteBanditParams{T}, p::Array{T2}) where {T,T2}
+# TODO is this even called? There is no instantiation of DiscreteBanditParams type.
+function eval_policy(
+    b::DiscreteBanditParams{T},
+    p::Array{T2}
+) where {T,T2}
     J = 0.0
     t = b.t[1]
     for i in 1:length(p)

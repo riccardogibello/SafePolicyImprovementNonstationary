@@ -18,8 +18,24 @@ include("glucose_env.jl")
 include("nonstationary_modeling.jl")
 include("nonstationary_pi.jl")
 
-function collect_data!(H::BanditHistory, action::Int, sample_fn!, N, rng)
-    for i in 1:N
+"""
+This method is used in the Glucose experiment to collect data N timesteps
+in the future.
+
+H: BanditHistory object to store the data (actions, log-probabilities, and rewards).
+action: Action to take in the bandit problem. This is fixed in all the N timesteps.
+sample_fn!: Function to sample the rewards from the bandit problem.
+N: Number of timesteps to collect data.
+rng: Random number generator.
+"""
+function collect_data!(
+    H::BanditHistory, 
+    action::Int, 
+    sample_fn!,
+    N,
+    rng
+)
+    for _ in 1:N
         logp = 0.0
         r = sample_fn!(action, rng)
         push!(H, deepcopy(action), logp, r)
