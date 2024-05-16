@@ -81,8 +81,6 @@ function optimize_nsdbandit_safety(
     rng,
     speed,
     hyperparams,
-    fpath,
-    save_res
 )
     # Create a new BanditHistory object to store the history of the bandit problem
     D = BanditHistory(Float64, Int)
@@ -154,6 +152,9 @@ function optimize_nsdbandit_safety(
     oparams = AdamParams(get_params(π), 1e-2; β1=0.9, β2=0.999, ϵ=1e-5)
     # τ = number of steps for which data are collected
     τ, λ, opt_ratio, fb_order = hyperparams
+    # Cast τ and fb_order to Int to avoid errors
+    τ = Int(τ)
+    fb_order = Int(fb_order)
     # Set the δ percentile lower bound to maximize future (use 1-ϵ for upper bound)
     δ = 0.05
     IS = PerDecisionImportanceSampling()
@@ -207,6 +208,7 @@ function optimize_nsdbandit_safety(
     # as the total number of timesteps to be run divided by tau (i.e., the number of
     # timesteps added at each iteration)
     num_iters = num_episodes / τ
+    print("num_iters: $num_iters\n")
     train_idxs = Array{Int, 1}()
     test_idxs = Array{Int, 1}()
     # Perform the High Confidence Off-Policy Improvement (HICOPI) algorithm by using the given
@@ -228,11 +230,11 @@ function optimize_nsdbandit_safety(
         warmup_steps
     )
 
-    res = save_results(fpath, rec, D.rewards, tidx, piflag, save_res)
+    # res = save_results(rec, D.rewards, tidx, piflag)
     # display(plot_results(rec, D.rewards, tidx, piflag, "NS Discrete Entropy"))
-    return res
-    # TODO this is actually the needed return value for printing the learning curves
-    # return (rec, D.rewards, tidx, piflag)
+    # return res
+    # TODO actually this is the needed return value for printing the learning curves
+    return (rec, D.rewards, tidx, piflag)
 end
 
 """
@@ -308,33 +310,83 @@ function combine_trials(
     return t, (mnunsafe, stdunsafe), (mnfound, stdfound), (mnJpi, stdJpi), (mnJalg, stdJalg)
 end
 
-function learning_curves(res1, res2, baseline, labels, title)
+"""
+This method plots, for the given results:
+1) the performances of the BASELINE and SPIN algorithms.
+2) the percentage of times across the experiments in which the computed policy was used against the safe one
+(i.e., passed the safety test) and had a lower return.
+3) the percentage of times across the experiments in which the computed policy was used against the safe one
+(i.e., passed the safety test).
+
+res1: the results of the set of experiments related to the BASELINE algorithm, which is not aware of the non-stationarity of the environment.
+res2: the results of the set of experiments related to the SPIN algorithm, which is aware of the non-stationarity of the environment.
+baseline: the performance of the π_safe policy.
+labels: the labels of the two algorithms.
+title: the title of the plot.
+"""
+function learning_curves(
+    # TODO shouldn't it be more clear to call these res_baseline and res_spin?
+    res1, 
+    res2,
+    # TODO shouldn't it be more clear to call this π_safe_perf?
+    baseline, 
+    labels, 
+    title,
+    path,
+)
     p1 = plot(title=title)
     p2 = plot()
 
-    # rgrad = cgrad([:crimson, :dodgerblue])
-    # plot!(p1, rec.t, rews, linestyle=:dot, lc=rgrad, line_z=issafety, label="observed rewards")
+    # ============================== PLOT 1 ASSIGNMENTS ==============================
+    # Unpack the results of the set of experiments related to the agent which is not aware of the 
+    # non-stationarity of the environment
     t1, safe1, found1, Jpi1, Jalg1 = res1
+    # Set the line that contains the performances of the π_safe policy (dotted black line)
     plot!(p1, t1, baseline, lc=:black, label="π_safe")
+    # Set the line that contains the performance of the BASELINE algorithm (i.e., not accounting
+    # for the non-stationarity of the environment, red line)
     plot!(p1, t1, Jalg1[1], ribbon=Jalg1[2], lc=:crimson, fillalpha=0.3, label=labels[1])
+    # Set the line that contains the performances of the π_c policy of the BASELINE algorithm 
+    # (dotted red line)
     plot!(p1, t1, Jpi1[1], lc=:crimson, linestyle=:dot, label=nothing)
 
+    # Unpack the results of the set of experiments related to the agent which is aware of the 
+    # non-stationarity of the environment
     t2, safe2, found2, Jpi2, Jalg2 = res2
+    # Set the line that contains the performances of the SPIN algorithm (blue line)
     plot!(p1, t2, Jalg2[1], ribbon=Jalg2[2], lc=:dodgerblue, fillalpha=0.3, label=labels[2])
+    # Set the line that contains the performances of the π_c policy of the SPIN algorithm (dotted blue line)
     plot!(p1, t2, Jpi2[1], lc=:dodgerblue, linestyle=:dot, label=nothing, legend=:topleft)
-
+    
+    # Set the x and y axis labels
     xlabel!(p1, "Episode")
     ylabel!(p1, "Performance")
+    # ================================================================================
 
+    # ============================== PLOT 2 ASSIGNMENTS ==============================
+    # Plot, for the BASELINE, the percentage of times across the experiments in which the computed policy was used
+    # against the safe one (i.e., passed the safety test) (red dotted line)
     plot!(p2, t1, found1[1], ribbon=found1[2], linestyle=:dash, lc=:crimson, fillalpha=0.3, label="Canditate Returned-Baseline")
+    # Plot, for the BASELINE, the percentage of times across the experiments in which the computed policy was used
+    # against the safe one (i.e., passed the safety test) but had a lower return (red line)
     plot!(p2, t1, safe1[1], ribbon=safe1[2], linestyle=:solid, lc=:crimson, fillalpha=0.3,  label="Unsafe Policy-Baseline")
+    # Plot, for the SPIN algorithm, the percentage of times across the experiments in which the computed policy was used
+    # against the safe one (i.e., passed the safety test) (blue dotted line)
     plot!(p2, t2, found2[1], ribbon=found2[2], linestyle=:dash, lc=:dodgerblue, fillalpha=0.3,  label="Canditate Returned-SPIN")
+    # Plot, for the SPIN algorithm, the percentage of times across the experiments in which the computed policy was used
+    # against the safe one (i.e., passed the safety test) but had a lower return (blue line)
     plot!(p2, t2, safe2[1], ribbon=safe2[2], linestyle=:solid, lc=:dodgerblue, fillalpha=0.3,  label="Unsafe Policy-SPIN", legend=:topleft)
 
+    # Set the x and y axis labels
     xlabel!(p2, "Episode")
     ylabel!(p2, "Probability")
+    # ================================================================================
+
     p = plot(p1, p2, layout=(2,1))
-    savefig(p, "plots/learningcurve.pdf")
+    savefig(
+        p, 
+        joinpath(path, "learningcurve.pdf")
+        )
     return p
 end
 
@@ -342,46 +394,56 @@ end
 This method saves the results of the given experiment.
 
 fpath: the path to the file where the results will be saved.
-
 rec: the record of the performance of the policy.
-
 rews: an array of the rewards obtained at each timestep and 
 stored in the bandit history.
-
 piflag: an array of booleans that specify whether, at each timestep, 
 the safe policy was used because the computed one was unsafe.
-
 save_res: a boolean that specifies whether the results should be saved
 in a CSV file.
 """
 function save_results(
-    fpath, 
     rec::SafetyPerfRecord, 
     rews, 
     tidxs, 
-    piflag, 
-    save_res=true
+    piflag,
 )
+    # unsafe 
     unsafe = zeros(length(rews))
+    # notnsf = a mask that indicates whether, at the given timestep index, the candidate policy
+    # was used (because considered safe)
     notnsf = zeros(length(rews))
+    # For each starting and ending timestep in the tidxs array
     for (i, (ts, te)) in enumerate(tidxs)
+        # If the computed new policy was used against the safe one (i.e., passed the safety test)
         if piflag[i]
+            # Set to 1 the values of the notnsf array from the start to the end timestep
             notnsf[ts:te] .= 1
+            # If the mean return of the safe policy would have been higher than the one of the computed policy
             if mean(rec.Jsafe[ts:te]) > mean(rec.Jpi[ts:te])
+                # Set to 1 the values of the unsafe array from the start to the end timestep
                 unsafe[ts:te] .= 1
             end
         end
     end
-    df = DataFrame(t = rec.t, rews=rews, Jpi = rec.Jpi, found=notnsf, unsafe=unsafe)
-    if save_res
-        CSV.write(fpath, df)
-    end
+    # Compute the mean performance as the mean of the rewards over all the timesteps
     obsperf = mean(rews)
+    # Compute the mean performance of the candidate policy as the mean of the Jpi values
     canperf = mean(rec.Jpi)
+    # Compute the mean performance of the algorithm as the mean of the Jpi values if the policy was safe,
+    # otherwise the mean of the Jsafe values
     algperf = mean(notnsf .* rec.Jpi .+ (1 .- notnsf) .* rec.Jsafe)
+    # Compute the foundpct as the percentage over all the timesteps in which the candidate policy was used
+    # against the safe one
     foundpct = mean(notnsf)
+    # Compute the violation index, that is the percentage of timesteps in which the candidate policy 
+    # was used against the safe one but had a lower return
     violation = mean(unsafe)
+    # Compute the regret as the mean between the difference of the algorithm performance and the safe policy performance
+    # TODO Wouldn't it be more intuitive to call it gain? Because it is > 0 when the actual algorithm performances outperform
+    # the safe policy ones
     regret = mean(notnsf .* rec.Jpi .+ (1 .- notnsf) .* rec.Jsafe .- rec.Jsafe)
+    # Return all the results in a single array
     sumres = [obsperf, canperf, algperf, regret, foundpct, violation]
     return sumres
 end
@@ -409,6 +471,7 @@ function logRand(low, high, rng)
     # Return the generated number and its log-probability
     return X, logp
 end
+
 function logRand(low, high, rng)
     X = exp(rand(rng, Uniform(log(low), log(high))))
     logp = -log(log(high) - log(high) - log(X))
@@ -449,6 +512,72 @@ function sample_hyperparams(
     return params
 end
 
+function run_trials(
+    seed,
+    save_dir,
+    n_trials,
+    num_episodes,
+    algname,
+    speed,
+    hyps,
+    rng,
+)
+    # Create a name for the save file based on the algorithm name and seed
+    save_name = "$(algname)_$(lpad(seed, 5, '0')).csv"
+
+    # Join the save directory and save name to create the full save path
+    save_path = joinpath(save_dir, save_name)
+
+    # Open the file for writing the results
+    file = open(save_path, "w")
+
+    # Write the header line to the save file
+    write(file, "tau,lambda,optratio,fborder,obsperf,canperf,algperf,regret,foundpct,violation\n")
+    # Flush the file to ensure the header line is written
+    flush(file)
+    
+    trial_results = []
+    trial_hyperparams = []
+    # Loop over the number of trials
+    for _ in 1:n_trials
+        # Run the optimization for the non-stationary bandit safety problem
+        res = optimize_nsdbandit_safety(
+            num_episodes, 
+            rng, 
+            speed, 
+            hyps, 
+        )
+
+        # Add the results to the list of results
+        push!(trial_results, res)
+        # Add the hyperparameters to the list of hyperparameters
+        push!(trial_hyperparams, hyps)
+
+        # Create a string for the current experiment results, composed by:
+        # - hyperparameters
+        # - observed performance
+        # - candidate performance
+        # - algorithm performance
+        # - regret (i.e., difference between algorithm and safe policy performance)
+        # - found percentage (i.e., percentage of times the candidate policy was used)
+        # - violation percentage (i.e., percentage of times the candidate policy was used but had a lower return)
+        tmp_result_row = join([
+            hyps..., 
+            save_results(res[1], res[2], res[3], res[4])...
+            ], 
+            ','
+        )
+
+        # Write the results of the current experiment
+        write(file, "$(tmp_result_row)\n")
+
+        # Flush the file to ensure the result line is written
+        flush(file)
+    end
+
+    return trial_hyperparams, trial_results
+end
+
 
 """
 This method runs, for trials times, the sampling of the hyperparameters and the optimization of the
@@ -468,67 +597,112 @@ speed: the speed of non-stationarity of the bandit problem.
 num_episodes: the number of total timesteps that must be contained in each experiment.
 """
 function runsweep(
-    seed, 
-    algname, 
+    seed,
     save_dir, 
     trials, 
     speed, 
     num_episodes
 )
+    plots_path = joinpath(save_dir, "plots")
+    # Build the "plots" folder, if not already existing
+    if !isdir(plots_path)
+        mkdir(plots_path)
+    end
+
     # Initialize a random number generator with the provided seed
     rng = Random.MersenneTwister(seed)
 
-    # Create a name for the save file based on the algorithm name and seed
-    save_name = "$(algname)_$(lpad(seed, 5, '0')).csv"
-
-    # Join the save directory and save name to create the full save path
-    save_path = joinpath(save_dir, save_name)
-
-    # Open the save file for writing
-    file = open(save_path, "w")
     
-    # Write the header line to the save file
-    write(file, "tau,lambda,optratio,fborder,obsperf,canperf,algperf,regret,foundpct,violation\n")
-    # Flush the file to ensure the header line is written
-    flush(file)
+    # Sample the hyperparameters with a Fourier basis order of 0
+    hyps = sample_hyperparams(
+        0,
+        rng
+    )
+    print("hyps: $hyps\n")
+    _, baseline_trial_results = run_trials(
+        seed,
+        save_dir,
+        trials,
+        num_episodes,
+        "BASELINE",
+        speed,
+        hyps,
+        rng,
+    )
+    # Replace the Fourier basis order with a random number in the SPIN algorithm experiment
+    fourier_basis_order = round(Int, sample_hyperparams(speed, rng)[4])
+    hyps = [
+        hyps[1], 
+        hyps[2], 
+        hyps[3],
+        # cast the following to Int64
+        fourier_basis_order
+    ]
+    print("hyps: $hyps\n")
+    _, spin_trial_results = run_trials(
+        seed,
+        save_dir,
+        trials,
+        num_episodes,
+        "SPIN",
+        speed,
+        hyps,
+        rng,
+    )
+    
+    # Now combine the data of all the experiments of the BASELINE and SPIN algorithms
+    baseline_combined_results = combine_trials(baseline_trial_results)
+    spin_combined_results = combine_trials(spin_trial_results)
+    # Get the pi_safe performance from the first trial of the first record (non stationary case)
+    pi_safe_results = spin_trial_results[1][1].Jsafe
 
-    # Loop over the number of trials
-    for _ in 1:trials
-        # TODO shouldn't I check that algname and speed does not conflict? (e.g., stationary and speed > 0)
-        # If the algorithm name is "stationary"
-        if algname == "stationary"
-            # sample stationary hyperparameters
-            hyps = sample_hyperparams(
-                speed,
-                rng
-            )
-        else
-            # Otherwise, sample non-stationary hyperparameters
-            hyps = sample_hyperparams(
-                speed,
-                rng
-            )
-        end
+    df1 = DataFrame(
+        t = baseline_combined_results[1],  
+        mnsafe = baseline_combined_results[2][1], 
+        stdsafe = baseline_combined_results[2][2], 
+        mnfound = baseline_combined_results[3][1], 
+        stdfound = baseline_combined_results[3][2], 
+        mnJpi = baseline_combined_results[4][1], 
+        stdJpi = baseline_combined_results[4][2], 
+        mnJalg = baseline_combined_results[5][1], 
+        stdJalg = baseline_combined_results[5][2], 
+        baseline=pi_safe_results
+    )
+    # TODO shouldn't it be more clear to call this file baseline_learncurve.csv?
+    CSV.write(
+        joinpath(plots_path, "nonstationary_learncurve.csv"),
+        df1
+    )
+    
+    df2 = DataFrame(
+        t = spin_combined_results[1],  
+        mnsafe = spin_combined_results[2][1], 
+        stdsafe = spin_combined_results[2][2], 
+        mnfound = spin_combined_results[3][1], 
+        stdfound = spin_combined_results[3][2], 
+        mnJpi = spin_combined_results[4][1], 
+        stdJpi = spin_combined_results[4][2], 
+        mnJalg = spin_combined_results[5][1], 
+        stdJalg = spin_combined_results[5][2], 
+        baseline=pi_safe_results
+    )
+    # TODO shouldn't it be more clear to call this file spin_learncurve.csv?
+    CSV.write(
+        joinpath(plots_path, "stationary_learncurve.csv"),
+        df2
+    )
 
-        # Run the optimization for the non-stationary bandit safety problem
-        res = optimize_nsdbandit_safety(
-            num_episodes, 
-            rng, 
-            speed, 
-            hyps, 
-            "nopath.csv", 
-            false
+    # Display the results of the BASELINE and SPIN algorithms
+    display(
+        learning_curves(
+            baseline_combined_results, 
+            spin_combined_results, 
+            pi_safe_results, 
+            ["Baseline", "SPIN"], 
+            "Nonstationary Recommender System",
+            plots_path,
         )
-
-        # Join the hyperparameters and results into a single string
-        result = join([hyps..., res...], ',')
-
-        # Write the result string to the save file
-        write(file, "$(result)\n")
-
-        # Flush the file to ensure the result line is written
-        flush(file)
-    end
+    )
 end
 
 function tmp(
@@ -551,16 +725,14 @@ function tmp(
         speed,
         rng
     ) # TODO before: (Int(4), 0.125, 3.0, Int(3))
+    print(hyps)
     recs1 = [
         optimize_nsdbandit_safety(
             num_episodes, 
             rng, 
             speed, 
             hyps, 
-            "nopath.csv", 
-            false
-            ) 
-            for _ in 1:num_trials
+            ) for _ in 1:num_trials
     ]
     
     # STATIONARY CASE
@@ -569,16 +741,16 @@ function tmp(
         0,
         rng
     ) # TODO before: (Int(4), 0.125, 3.0, Int(0))
+    # Replace in the tuple the Fourier basis order 
+    # with 0 in the BASELINE algorithm experiment
+    hyps = (hyps[1], hyps[2], hyps[3], 0)
     recs2 = [
         optimize_nsdbandit_safety(
             num_episodes, 
             rng, 
             speed, 
             hyps, 
-            "nopath.csv", 
-            false
-            ) 
-            for _ in 1:num_trials
+            ) for _ in 1:num_trials
     ]
 
     r1 = combine_trials(recs1)
@@ -619,7 +791,8 @@ function tmp(
             r1, 
             baseline, 
             ["Baseline", "SPIN"], 
-            "Nonstationary Recommender System"
+            "Nonstationary Recommender System",
+            "plots",
         )
     )
 end
@@ -665,13 +838,6 @@ function main()
     # (ARGS in Julia is a global variable that holds the command line arguments)
     parsed_args = parse_args(ARGS, s)
 
-    # Extract the algorithm name from the parsed arguments
-    aname = parsed_args["alg-name"]
-
-    # Print the algorithm name and the log directory
-    println(aname)
-    println(parsed_args["log-dir"])
-
     # Flush the standard output to ensure that the previous prints are displayed
     flush(stdout)
 
@@ -685,7 +851,10 @@ function main()
     speed = parsed_args["speed"]
     num_episodes = parsed_args["eps"]
 
-    # Join the save directory with a subdirectory named "discretebandit_" followed by the speed
+    # Create the directory path where to store the results 
+    # (i.e., a subdirectory of the given directory, 
+    # named "discretebandit_" followed by the speed of the
+    # current environment)
     save_dir = joinpath(save_dir, "discretebandit_$speed")
 
     # Create the save directory and its parents if they do not exist
@@ -700,14 +869,19 @@ function main()
     # Update the seed to be the sum of id and seed
     seed = id + seed
 
-    # Run the sweep with the specified parameters
-    runsweep(seed, aname, save_dir, trials, speed, num_episodes)
-
-    # Evaluate the time needed to perform the next instruction
     @time begin
-    tmp(num_episodes, speed)
+    # Run the sweep (i.e., a simulation of the experiment) both in the BASELINE
+    # and SPIN cases in an environment whose (non)stationarity is determined by speed. 
+    # For each of them, run the simulation for the given number
+    # of trials ("num_episodes" each), saving the results in the given directory
+    runsweep(
+        seed, 
+        save_dir, 
+        trials, 
+        speed, 
+        num_episodes
+    )
     end
-
 end
 
 main()

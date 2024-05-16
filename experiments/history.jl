@@ -1,5 +1,7 @@
 import Base:length,push!
 
+include("environments.jl")
+
 # TODO this is required in order to avoid the following warning;
 # then, in any file, you must use import of the file + using
 # e.g. include("history.jl"); using .history: BanditHistory

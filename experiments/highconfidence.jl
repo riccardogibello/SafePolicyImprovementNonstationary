@@ -1,5 +1,17 @@
 using EvaluationOfRLAlgs
 
+abstract type AbstractSplitMethod end
+
+#unbaised method for splitting
+struct SplitLastK{T} <: AbstractSplitMethod where {T}
+    p::T
+end
+
+# biased method for splitting
+struct SplitLastKKeepTest{T} <: AbstractSplitMethod where {T}
+    p::T
+end
+
 """
     safety_lastk_split(D, K)
 
@@ -225,18 +237,6 @@ function HICOPI!(
     # and the flab array, indicating at each timestep whether the policy improvement 
     # condition was met
     return timeidxs, picflag
-end
-
-abstract type AbstractSplitMethod end
-
-#unbaised method for splitting
-struct SplitLastK{T} <: AbstractSplitMethod where {T}
-    p::T
-end
-
-# biased method for splitting
-struct SplitLastKKeepTest{T} <: AbstractSplitMethod where {T}
-    p::T
 end
 
 
