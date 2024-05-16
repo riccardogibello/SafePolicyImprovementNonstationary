@@ -134,3 +134,6 @@ plots
 log_dir
 # Ignore any subfolder of experiments/data that does not contain the ".zip" suffix
 experiments/data/*[!.zip]/
+emissions.csv
+.codecarbon.config
+.idea

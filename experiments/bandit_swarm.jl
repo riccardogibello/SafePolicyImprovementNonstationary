@@ -207,8 +207,9 @@ function optimize_nsdbandit_safety(
     # Calculate the number of iterations to run the policy optimization algorithm
     # as the total number of timesteps to be run divided by tau (i.e., the number of
     # timesteps added at each iteration)
-    num_iters = num_episodes / τ
-    print("num_iters: $num_iters\n")
+    # TODO shouldn't num_iters be an integer?
+    # Approximate the num_iters to the nearest (upper) integer
+    num_iters = round(Int, num_episodes / τ) + 1
     train_idxs = Array{Int, 1}()
     test_idxs = Array{Int, 1}()
     # Perform the High Confidence Off-Policy Improvement (HICOPI) algorithm by using the given
@@ -670,7 +671,7 @@ function runsweep(
     )
     # TODO shouldn't it be more clear to call this file baseline_learncurve.csv?
     CSV.write(
-        joinpath(plots_path, "nonstationary_learncurve.csv"),
+        joinpath(plots_path, "BASELINE_experiments_average.csv"),
         df1
     )
     
@@ -688,7 +689,7 @@ function runsweep(
     )
     # TODO shouldn't it be more clear to call this file spin_learncurve.csv?
     CSV.write(
-        joinpath(plots_path, "stationary_learncurve.csv"),
+        joinpath(plots_path, "SPIN_experiments_average.csv"),
         df2
     )
 
@@ -803,10 +804,6 @@ function main()
     s = ArgParseSettings()
     # Add arguments to the settings object
     @add_arg_table! s begin
-        "--alg-name", "-a"
-            help = "name of the algorithm to run"
-            arg_type = String
-            required = true
         "--log-dir", "-l"
             help = "folder directory to store results"
             arg_type = String
@@ -855,7 +852,7 @@ function main()
     # (i.e., a subdirectory of the given directory, 
     # named "discretebandit_" followed by the speed of the
     # current environment)
-    save_dir = joinpath(save_dir, "discretebandit_$speed")
+    save_dir = joinpath(save_dir, "discretebandit_$speed", "experiment_$id")
 
     # Create the save directory and its parents if they do not exist
     mkpath(save_dir)

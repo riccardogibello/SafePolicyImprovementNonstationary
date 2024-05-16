@@ -222,13 +222,11 @@ function HICOPI!(
         if result == :NSF
             # Keep the πsafe as the πbehavior
             πbehavior = πsafe
-            println("iteration $i π is not safe")
             using_pic = false
         else
             # Otherwise, set the current π policy as the πbehavior
             # TODO this could be set to "result", isn't it?
             πbehavior = π
-            println("iteration $i π is safe")
             using_pic = true
         end
     end
