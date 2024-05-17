@@ -1,4 +1,5 @@
 import argparse
+import platform
 import subprocess
 
 from codecarbon import track_emissions
@@ -74,6 +75,13 @@ if __name__ == '__main__':
         help='The number of episodes for each trial.',
         required=True,
     )
+    parser.add_argument(
+        '--pythonexec',
+        metavar='PE',
+        type=str,
+        help='The python executable to be used.',
+        required=True,
+    )
 
     # Parse all the arguments
     args = parser.parse_args()
@@ -84,8 +92,20 @@ if __name__ == '__main__':
     # Call the shell script with the given arguments
     # Define the command as a list
     print(str(args.trials))
-    command = [
-        "./run_experiments.sh",
+    # Get the OS name
+    os_name = platform.system()
+    # If the OS is Windows
+    if os_name == 'Windows':
+        command = [
+            "sh",
+            "./run_experiments.sh",
+        ]
+    else:
+        command = [
+            "./run_experiments.sh",
+        ]
+
+    command.extend([
         "--init",
         "-f", str(args.f),
         "-o", str(args.o),
@@ -93,8 +113,9 @@ if __name__ == '__main__':
         "--speeds", speeds_str,
         "--ids", str(args.ids),
         "--trials", str(args.trials),
-        "--eps", str(args.eps)
-    ]
+        "--eps", str(args.eps),
+        '--pythonexec', str(args.pythonexec),
+    ])
 
     # Call the function that will be tracked
     tracked_function(

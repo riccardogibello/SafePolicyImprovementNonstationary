@@ -62,6 +62,12 @@ while (( "$#" )); do
             shift # Remove argument name from processing
             shift # Remove argument value from processing
             ;;
+        --pythonexec)
+            pythonexe="$2"
+            ECHO "Python executable: $pythonexe"
+            shift # Remove argument name from processing
+            shift # Remove argument value from processing
+            ;;
         *)
             echo "Invalid option: $arg" >&2
             exit 1
@@ -78,8 +84,8 @@ if [ -z "$input_file" ]; then
 fi
 
 # If any of the required parameters are not given
-if [ -z "$log_dir" ] || [ -z "$seed" ] || [ -z "$speeds" ] || [ -z "$ids" ] || [ -z "$trials" ] || [ -z "$eps" ]; then
-    echo "Missing required parameters. Required: log_dir, seed, speeds, ids, trials, eps"
+if [ -z "$log_dir" ] || [ -z "$seed" ] || [ -z "$speeds" ] || [ -z "$ids" ] || [ -z "$trials" ] || [ -z "$eps" ] || [ -z "$pythonexe" ]; then
+    echo "Missing required parameters. Required: log_dir, seed, speeds, ids, trials, eps, pythonexe"
     exit 1
 fi
 
@@ -92,16 +98,16 @@ echo "Speeds: ${speeds[@]}"
 if [ "$init" = true ]; then
     # Initialize the python environment variable, create and activate 
     # the julia environment, install the required packages
-    julia --project=@. -e '
-        ENV["PYTHON"] = "/usr/bin/python3"
+    julia --project=@. -e "
+        ENV[\"PYTHON\"] = \"${pythonexe}\"
 
         using Pkg; 
-        Pkg.activate(".");
+        Pkg.activate(\".\");
         Pkg.instantiate();
-        Pkg.build("IJulia");
-        Pkg.build("PyCall");
-        Pkg.add(Pkg.PackageSpec(url="https://github.com/ScottJordan/EvaluationOfRLAlgs.git"));
-    '
+        Pkg.build(\"IJulia\");
+        Pkg.build(\"PyCall\");
+        Pkg.add(Pkg.PackageSpec(url=\"https://github.com/ScottJordan/EvaluationOfRLAlgs.git\"));
+    "
 fi
 
 # For each speed in the list
