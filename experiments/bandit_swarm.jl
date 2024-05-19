@@ -6,6 +6,8 @@ using CSV
 using ArgParse
 using Distributions
 using Plots
+using Profile
+using ProfileView
 
 
 include("normalpolicy.jl")
@@ -694,16 +696,16 @@ function runsweep(
     )
 
     # Display the results of the BASELINE and SPIN algorithms
-    display(
-        learning_curves(
-            baseline_combined_results, 
-            spin_combined_results, 
-            pi_safe_results, 
-            ["Baseline", "SPIN"], 
-            "Nonstationary Recommender System",
-            plots_path,
-        )
+    # display(
+    learning_curves(
+        baseline_combined_results, 
+        spin_combined_results, 
+        pi_safe_results, 
+        ["Baseline", "SPIN"], 
+        "Nonstationary Recommender System",
+        plots_path,
     )
+    # )
 end
 
 function tmp(
@@ -798,6 +800,28 @@ function tmp(
     )
 end
 
+function isprime(n::Int)
+    if n < 2
+        return false
+    end
+    for i in 2:isqrt(n)
+        if n % i == 0
+            return false
+        end
+    end
+    return true
+end
+
+function test()
+    for i in 1:1000
+        rng = MersenneTwister(0)
+        # Draw a random number between 10 and 1000
+        τ = rand(rng, 1000:20000)
+        # Find all the primes between 1 and τ
+        _ = [i for i in 1:τ if isprime(i)]
+    end
+end
+
 # Main function to run the experiments
 function main()
     # Create a settings object to hold the arguments
@@ -832,8 +856,7 @@ function main()
     end
 
     # Parse the command line arguments and set them into the s object
-    # (ARGS in Julia is a global variable that holds the command line arguments)
-    parsed_args = parse_args(ARGS, s)
+    parsed_args = parse_args(localARGS, s)
 
     # Flush the standard output to ensure that the previous prints are displayed
     flush(stdout)
@@ -871,7 +894,10 @@ function main()
     # and SPIN cases in an environment whose (non)stationarity is determined by speed. 
     # For each of them, run the simulation for the given number
     # of trials ("num_episodes" each), saving the results in the given directory
-    runsweep(
+    # Initialize the profiler with a larger buffer and/or larger delay
+    # Buffer size = 10 million, delay = 0.01 seconds
+    Profile.init(n = 10^7, delay = 0.01)
+    ProfileView.@profview runsweep(
         seed, 
         save_dir, 
         trials, 
@@ -879,6 +905,21 @@ function main()
         num_episodes
     )
     end
+    """# Open a file to write the profile results
+    prof_file = open("profile_results.txt", "w")
+    # Write the profile results in a flat manner to a file
+    Profile.print(prof_file, format=:flat)"""
 end
 
+# If the newARGS variable is defined (i.e., the script is being run from the REPL),
+if @isdefined(newARGS)
+    # Set the localARGS variable to the newARGS variable
+    localARGS = newARGS
+else
+    # Otherwise, set the localARGS variable to the ARGS variable;
+    # NOTE: ARGS in Julia is a global variable that holds the command line arguments;
+    localARGS = ARGS
+end
+
+# Call the main function to perform the experiment
 main()

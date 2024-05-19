@@ -1,15 +1,49 @@
 import argparse
 import platform
 import subprocess
+import sys
 
-from codecarbon import track_emissions
+from codecarbon import OfflineEmissionsTracker
+import logging
 
 
-@track_emissions(logging_logger=None)
 def tracked_function(
         _command
 ):
-    subprocess.run(_command, check=True)
+    tracker = OfflineEmissionsTracker(
+        country_iso_code="ITA",
+        measure_power_secs=30,
+        project_name="safe_policy_experiment",
+    )
+
+    # Create a dedicated logger (log name can be the CodeCarbon project name for example)
+    logger = logging.getLogger('codecarbon')
+    while logger.hasHandlers():
+        logger.removeHandler(logger.handlers[0])
+
+    # Define a log formatter
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)-12s: %(levelname)-8s %(message)s"
+    )
+
+    # Create file handler which logs debug messages
+    fh = logging.FileHandler("codecarbon.log")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+
+    consoleHandler = logging.StreamHandler(sys.stdout)
+    consoleHandler.setFormatter(formatter)
+    consoleHandler.setLevel(logging.WARNING)
+    logger.addHandler(consoleHandler)
+
+    logger.debug("GO!")
+
+    tracker.start()
+    try:
+        subprocess.run(_command, check=True)
+    finally:
+        tracker.stop()
 
 
 if __name__ == '__main__':
