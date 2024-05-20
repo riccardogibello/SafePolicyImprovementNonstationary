@@ -22,13 +22,21 @@ struct NSDiscreteGlucoseSim <: AbstractDiscreteBandit
     end
 end
 
-function sample_reward!(b::NSGlucoseSim, action::Array{Float64,1}, rng=nothing) where {T}
+function sample_reward!(
+    b::NSGlucoseSim, 
+    action::Array{Float64,1}, 
+    rng=nothing
+) where {T}
     b.env.reset()
     _, r, _, _ = b.env.step(action)
     return convert(Float64,r)
 end
 
-function sample_reward!(b::NSDiscreteGlucoseSim, action::Int, rng=nothing) where {T}
+function sample_reward!(
+    b::NSDiscreteGlucoseSim, 
+    action::Int, 
+    rng=nothing
+) where {T}
     b.env.reset()
     _, r, _, _ = b.env.step(b.actions[action])
     return convert(Float64,r)

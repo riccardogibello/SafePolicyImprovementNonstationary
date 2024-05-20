@@ -33,11 +33,11 @@ function collect_data!(
     action::Int, 
     sample_fn!,
     N,
-    rng
+    seed
 )
     for _ in 1:N
         logp = 0.0
-        r = sample_fn!(action, rng)
+        r = sample_fn!(action, seed)
         push!(H, deepcopy(action), logp, r)
     end
 end

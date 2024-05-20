@@ -107,6 +107,15 @@ function push!(
     push!(H.rewards, reward)
 end
 
+function record_perf!(rec::SafetyPerfRecord, eval_fn, t, πc, πsafe)
+    # Add the current timestep to the t array of the record
+    push!(rec.t, t)
+    # Add the expected return of the policy πc to the Jpi array of the record
+    push!(rec.Jpi, eval_fn(πc))
+    # Add the expected return of the policy πsafe to the Jsafe array of the record
+    push!(rec.Jsafe, eval_fn(πsafe))
+end
+
 """
 This method is used in the RecSys environment.
 
@@ -127,6 +136,34 @@ function log_eval(
     record_perf!(rec, eval_fn, sample_counter[1], π, πsafe)
     # Return the sampled reward from the environment, given the current action
     return sample_reward!(env, action, rng)
+end
+
+function env_fn(mats, sample_counter, action, seed)
+    return mats[action][seed, sample_counter[1]]
+end
+
+function record_perf!(rec::SafetyPerfRecord, eval_fn, t, πc, πsafe)
+    push!(rec.t, t)
+    push!(rec.Jpi, eval_fn(πc))
+    push!(rec.Jsafe, eval_fn(πsafe))
+end
+
+function log_eval(
+    mats,
+    action, 
+    seed, 
+    sample_counter, 
+    rec, 
+    eval_fn, 
+    π, 
+    πsafe
+)
+    sample_counter[1] += 1
+    record_perf!(rec, eval_fn, sample_counter[1], π, πsafe)
+
+    # TODO in the code there was also this as commented
+    # env_fn(action, rng) = sample_reward!(env, action, rng)
+    return env_fn(mats, sample_counter, action, seed)
 end
 
 """

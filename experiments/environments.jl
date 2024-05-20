@@ -86,10 +86,32 @@ This is the method used in the Glucose experiment.
 function eval_policy(
     b::NonstationaryQuadraticBanditParams{T},
     π::StatelessNormalPolicy
-) where {T,T2}
+) where {T}
     t = b.t[1]
     μ, σ = π.μ[1], π.σ[1]
     J = -0.1*b.a^2^σ^2  + -0.1*(b.a*μ + b.b*cos(t * b.τ))^2
+    return J
+end
+
+"""
+This is the method used in the Glucose experiment. This method returns the expected return of the policy π
+at the current timestep t, based on the given returns of the actions for the provided timestep.
+
+t: the current timestep.
+π: the current policy.
+evaluation_means: a list of arrays, in which each array represents the mean of the columns
+of the matrices loaded from the CSV files.
+"""
+function eval_policy(
+    t::Int, 
+    π,
+    evaluation_means,
+)
+    J = 0.0
+    p = π.probs
+    for i in 1:5
+        J += p[i] * eval_means[i][t]
+    end
     return J
 end
 

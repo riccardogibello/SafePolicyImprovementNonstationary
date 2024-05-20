@@ -246,7 +246,7 @@ class T1DPatient(Patient):
         '''
         Reset the patient state to default intial state
         '''
-        self._last_Qsto = self.init_state[0] + self.init_state[1]
+        self._last_Qsto = self.init_state.iloc[0] + self.init_state.iloc[1]
         self._last_foodtaken = 0
         self.name = self._params.Name
 

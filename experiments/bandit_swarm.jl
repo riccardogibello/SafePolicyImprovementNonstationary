@@ -68,14 +68,7 @@ function plot_results(rec::SafetyPerfRecord, rews, tidxs, piflag, title)
     return p
 end
 
-function record_perf!(rec::SafetyPerfRecord, eval_fn, t, πc, πsafe)
-    # Add the current timestep to the t array of the record
-    push!(rec.t, t)
-    # Add the expected return of the policy πc to the Jpi array of the record
-    push!(rec.Jpi, eval_fn(πc))
-    # Add the expected return of the policy πsafe to the Jsafe array of the record
-    push!(rec.Jsafe, eval_fn(πsafe))
-end
+
 
 # TODO ns is a bit misleading since it is called also for non-stationary problems, isn't it?
 function optimize_nsdbandit_safety(
@@ -494,13 +487,14 @@ function sample_hyperparams(
     speed::Int,
     rng
 )
-    # Set the batch size that is used in the candidate search
+    # Set the number of agent interactions (timesteps) to be performed
+    # before the HICOPI step
     τ = rand(rng, [2,4,6,8])
     # Pick a random number between 0.00005 and 1.0 for
     # the entropy regularizer
     λ = logRand(0.00005, 1.0, rng)[1]
     # Pick a random number between 2 and 5
-    opt_ratio = rand(rng)*3 + 2
+    opt_ratio = rand(rng) * 3 + 2
     # If the speed is zero (i.e., stationary environment)
     if speed == 0
         # Set the Fourier basis order to 0 (i.e., no change in the environment is needed,

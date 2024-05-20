@@ -6,6 +6,23 @@ using CSV
 using ArgParse
 using Distributions
 
+# =======================================================================
+# TODO these 14 lines are needed only when run without the shell script
+# Get the current directory path
+@eval __DIR__ = dirname(@__FILE__)
+# Get the parent directory path
+@eval __DIRPARENT__ = dirname(dirname(@__FILE__))
+# Print the parent directory path
+println("Parent directory path: ", __DIRPARENT__)
+python_directory = joinpath(__DIRPARENT__, ".venv/bin/python3")
+println("Python directory path: ", python_directory)
+# Concatenate the parent directory path with the python directory
+ENV["PYTHON"] = python_directory
+using Pkg
+Pkg.activate(__DIRPARENT__);
+Pkg.instantiate();
+Pkg.build("PyCall");
+# =======================================================================
 
 include("normalpolicy.jl")
 include("softmaxpolicy.jl")
@@ -14,7 +31,7 @@ include("optimizers.jl")
 include("offpolicy.jl")
 
 include("environments.jl")
-# include("glucose_env.jl")
+include("glucose_env.jl")
 include("nonstationary_modeling.jl")
 include("nonstationary_pi.jl")
 
@@ -64,12 +81,6 @@ function plot_results(rec::SafetyPerfRecord, rews, tidxs, piflag, title)
     return p
 end
 
-function record_perf!(rec::SafetyPerfRecord, eval_fn, t, πc, πsafe)
-    push!(rec.t, t)
-    push!(rec.Jpi, eval_fn(πc))
-    push!(rec.Jsafe, eval_fn(πsafe))
-end
-
 function plot_results(rews, tidxs, piflag, title)
     p1 = plot(title=title)
     p2 = plot()
@@ -103,9 +114,25 @@ function plot_results(rews, tidxs, piflag, title)
     return p
 end
 
+"""
+This method loads and returns the matrices and means of the evaluation data for the glucose environment.
+
+speed: Int - The speed of the glucose environment, that is prefixed to any file name.
+"""
 function load_eval(speed)
-    mats = [CSV.File(joinpath(@__DIR__, "glucose_eval_data", "speed$(speed)_allact$(i).csv"), header=false) |> Tables.matrix for i in 1:5]
-    means = [mean(mat, dims=1) for mat in mats]
+    mats = [
+        # Convert each CSV file to a matrix
+        # NOTE: the |> operator is used to pipe the output of the CSV.File function to the Tables.matrix function
+        CSV.File(
+            joinpath(@__DIR__, "glucose_eval_data", "speed$(speed)_allact$(i).csv"), 
+            header=false
+        ) |> Tables.matrix for i in 1:5
+    ]
+    # For each matrix, calculate the mean of each column (i.e., by specifying the dims=1 argument to the mean function)
+    means = [
+        mean(mat, dims=1) 
+        for mat in mats
+    ]
     return mats, means
 end
 
@@ -185,77 +212,147 @@ function nsglucose_safety(num_episodes, rng, speed, fpath, save_res)
     # return (rec, D.rewards, tidx, piflag)
 end
 
-function optimize_disc_nsglucose_safety(num_episodes, rng, speed, hyperparams, fpath, save_res, seed)
+function optimize_disc_nsglucose_safety(
+    num_episodes, 
+    rng, 
+    speed, 
+    hyperparams, 
+    fpath, 
+    save_res, 
+    seed
+)
+    # Create an history object to keep track of all the actions taken, 
+    # their log-probabilities, and the rewards received
     D = BanditHistory(Float64, Int)
     # env = NSDiscreteGlucoseSim(speed, abs(rand(rng, UInt32)))
 
+    # Set the initial probabilities for each action
     p = [0.5, 0.125, 0.125, 0.125, 0.125]
+    # Normalize the probabilities to avoid overflow/underflow 
+    # when dealing with probabilities
     θ = log.(p) .- mean(log.(p))
+    # Retransform the θ vector to a vector of probabilities
     θ .= exp.(θ) / sum(exp.(θ))
 
+    # Assign the θ vector to the π policy (and initialize the probabilities
+    # to the softmax of the θ vector)
     π = StatelessSoftmaxPolicy(Float64, length(p))
     set_params!(π, θ)
     πsafe = clone(π)
 
+    # Load the evaluation data for the glucose environment
+    # from the CSV files in the "glucose_eval_data" directory
     mats, eval_means = load_eval(speed)
 
-    function eval_policy(t::Int, π) 
-        J = 0.0
-        p = π.probs
-        for i in 1:5
-            J += p[i] * eval_means[i][t]
-        end
-        return J
-    end
-
+    # Set the current timestep counter to 0
     sample_counter = [0]
-    # env_fn(action, rng) = sample_reward!(env, action, rng)
-    function env_fn(action, rng)
-        return mats[action][seed, sample_counter[1]]
-    end
-    
     
     rec = SafetyPerfRecord(Int, Float64)
-    eval_fn(π) = eval_policy(sample_counter[1], π)
-    function log_eval(action, rng, sample_counter, rec, eval_fn, π, πsafe)
-        sample_counter[1] += 1
-        record_perf!(rec, eval_fn, sample_counter[1], π, πsafe)
-        return env_fn(action, rng)
-    end
-    log_fn = (action, rng) -> log_eval(action, rng, sample_counter, rec, eval_fn, π, πsafe)
-    # sample_fn(D, π, N) = collect_data!(D, π, env_fn, N, rng)
-    sample_fn(D, π, N) = collect_data!(D, π, log_fn, N, rng)
-    # sample_fn(D, π, N) = collect_data!(D, π, env_fn, N, rng)
 
+    # Define a function that, taking a policy as input and the means of the 
+    # returns of different actions, evaluates the expected return
+    # of the policy π
+    eval_fn(π) = eval_policy(sample_counter[1], π, eval_means)
+    # Create an anonymous (lambda) function to be called inside the collect_data loop; this is used
+    # to update the data structures of the bandit given a chosen action (both following the
+    # pi and pi_safe policies);
+    log_fn = (action, seed) -> log_eval(
+        mats, 
+        action, 
+        seed, 
+        sample_counter, 
+        rec, 
+        eval_fn, 
+        π, 
+        πsafe
+    )
+    # Define a sample_fn function to collect, given an environment, a policy, and a number of samples,
+    # the data for the bandit problem
+    sample_fn(D, π, N) = collect_data!(D, π, log_fn, N, seed)
+
+    # Set the initial parameters for the optimization algorithm
     oparams = AdamParams(get_params(π), 1e-2; β1=0.9, β2=0.999, ϵ=1e-5)
 
+    # Unpack the given hyperparameters
     τ, λ, opt_ratio, fborder, old_ent = hyperparams
 
-    nboot_train = 200 # num bootstraps
+    # Set the number of bootstraps for the training and testing phases
+    nboot_train = 200
     nboot_test = 500
-    # τ = 8 # num_steps to optimize for future performance and to collect data for
-    δ = 0.05 # percentile lower bound to maximize future for (use 1-ϵ for upper bound)
-    # aggf = mean # function to aggregate future performance over (e.g., mean over τ steps,) maximium and minimum are also useful
-    # λ = 0.000005
+    # Set the δ percentile lower bound to maximize future (use 1-ϵ for upper bound)
+    δ = 0.05
     IS = PerDecisionImportanceSampling()
-    # num_opt_iters = 40
 
+    # Set the number of times the optimization step is run on the policy parameters
+    # as the multiplication between the interaction steps (of each iteration, 
+    # i.e., num_episodes / τ) and the optimization ratio
     num_opt_iters = round(Int, τ*opt_ratio)
+    # Set a number of preliminary steps in which the agent will interact with the environment
+    # prior to the safety optimization process
     warmup_steps = 20
+    # Fraction of data samples to be used for training
     sm = SplitLastKKeepTest(0.5)
+    # Call fourierseries method, so that fb will be a function to transform a scalar to a vector
+    # of the cosine values of the products between the scalar and the elements of an incremental array C
     fb = fourierseries(Float64, fborder)
+    # Create nt, a function that takes a timestep value and normalizes it with respect to the
+    # length of the bandit history and the tau value (future steps)
     nt = normalize_time(D, τ)
+    # Define the phi function, which accepts a timestep value, normalizes and fourier-transform it
     ϕ(t) = fb(nt(t))
 
-    num_iters = num_episodes / τ
+    # Calculate the number of iterations to run the policy optimization algorithm
+    # as the total number of timesteps to be run divided by tau (i.e., the number of
+    # timesteps added at each iteration)
+    # TODO shouldn't num_iters be an integer?
+    # Approximate the num_iters to the nearest (upper) integer
+    num_iters = round(Int, num_episodes / τ) + 1
 
     train_idxs = Array{Int, 1}()
     test_idxs = Array{Int, 1}()
 
-    opt_fun, safety_fun = build_nsbst(ϕ, τ; nboot_train=nboot_train, nboot_test=nboot_test, δ=δ, λ=λ, IS=IS, old_ent=old_ent, num_iters=num_opt_iters, rng=rng)
+    # Build the functions that are used to optimize the policy and perform the
+    # safety test
+    opt_fun, safety_fun = build_nsbst(
+        ϕ, 
+        τ; 
+        nboot_train=nboot_train, 
+        nboot_test=nboot_test, 
+        δ=δ, 
+        λ=λ, 
+        IS=IS, 
+        old_ent=old_ent, 
+        num_iters=num_opt_iters, 
+        rng=rng
+    )
 
-    tidx, piflag = HICOPI!(oparams, π, D, train_idxs, test_idxs, sample_fn, opt_fun, safety_fun, πsafe, τ, δ, sm, num_iters, warmup_steps)
-    res = save_results(fpath, rec, D.rewards, tidx, piflag, save_res)
+    # Perform the High Confidence Off-Policy Improvement (HICOPI) algorithm by using the given
+    # optimization and safety functions
+    tidx, piflag = HICOPI!(
+        oparams, 
+        π, 
+        D, 
+        train_idxs, 
+        test_idxs, 
+        sample_fn, 
+        opt_fun, 
+        safety_fun, 
+        πsafe, 
+        τ, 
+        δ, 
+        sm, 
+        num_iters, 
+        warmup_steps
+    )
+
+    res = save_results(
+        fpath,
+        rec,
+        D.rewards,
+        tidx,
+        piflag,
+        save_res
+    )
     # res = save_results(fpath, D.rewards, tidx, piflag, save_res)
     # display(plot_results(rec, D.rewards, tidx, piflag, "NS Discrete Entropy"))
     return res
@@ -526,11 +623,32 @@ function sample_ns_hyperparams(rng, old)
     return params
 end
 
-function sample_stationary_hyperparams(rng, old)
+function sample_hyperparams(
+    rng, 
+    old,
+    alg_name,
+)
+    # Set the number of agent interactions (timesteps) to be performed
+    # before the HICOPI step
     τ = rand(rng, [2,4,6,8])
+    # Pick a random number between 0.01 and 1.0 for
+    # the entropy regularizer
     λ = logRand(0.01, 1.0, rng)[1]
-    opt_ratio = rand(rng)*3 + 2 #[2,5]
-    fborder = 0
+    # Pick a random number between 2 and 5 for the coefficient to be used
+    # to calculate the total number of optimization iterations;
+    # # optimization iterations
+    opt_ratio = rand(rng) * 3 + 2
+    
+    # If the name of the algorithm is the BASELINE
+    if alg_name == :baseline
+        # Set the order of the Fourier basis expansion to 0
+        fborder = 0
+    else
+        # Pick a random number between 1 and 4 for the order of the Fourier basis expansion
+        fborder = rand(rng, 1:4)
+    end
+    
+    # Return the sampled hyperparameters as a tuple in which tau and fborder are rounded to integers
     params = (round(Int, τ), λ, opt_ratio, round(Int, fborder), old)
     return params
 end
@@ -546,19 +664,35 @@ function runsweep(id, seed, algname, save_dir, trials, speed, num_episodes)
 
     open(save_path, "w") do f
         write(f, "tau,lambda,optratio,fborder,old_ent,obsperf,canperf,algperf,regret,foundpct,violation\n")
-        # write(f, "tau,lambda,optratio,fborder,old_ent,obsperf,foundpct\n")
         flush(f)
+
         for trial in 1:trials
             rets_name = "returns_$(algname)_$(lpad(seed, 5, '0'))_$(lpad(trial, 5, '0')).csv"
             ret_path = joinpath(save_dir, rets_name)
             if algname == "stationary"
-                hyps = sample_stationary_hyperparams(rng, false)
+                hyps = sample_hyperparams(
+                    rng, 
+                    false,
+                    :baseline,
+                    )
             elseif algname == "stationary-old"
-                hyps = sample_stationary_hyperparams(rng, true)
+                hyps = sample_hyperparams(
+                    rng, 
+                    true,
+                    :baseline,
+                    )
             elseif algname == "nonstationary-old"
-                hyps = sample_ns_hyperparams(rng, true)
+                hyps = sample_hyperparams(
+                    rng, 
+                    true,
+                    :spin,
+                    )
             else
-                hyps = sample_ns_hyperparams(rng, false)
+                hyps = sample_hyperparams(
+                    rng, 
+                    false,
+                    :spin,
+                    )
             end
             # res = optimize_nsglucose_safety(num_episodes, rng, speed, hyps, ret_path, true)
             res = optimize_disc_nsglucose_safety(num_episodes, rng, speed, hyps, ret_path, true, seed)
