@@ -11,10 +11,26 @@ struct PerDecisionImportanceSampling <: UnweightedIS end
 struct WeightedImportanceSampling <: WeightedIS end
 struct WeightedPerDecisionImportanceSampling <: WeightedIS end
 
+"""
+This method computes the importance sampling weight of a policy π
+with respect to the behaviour policy π_b, given the action a taken
+by the behaviour policy (and the related log-probability blogp).
+
+blogp: is the log-probability vector of the actions taken by the behaviour policy.
+a: is the vector of actions taken by the behaviour policy.
+π: is the policy for which the importance sampling weight is computed.
+"""
 function IS_weight(blogp, a, π)
     return exp(logprob(π, a) - blogp)
 end
 
+"""
+This method computes the importance sampling weight of a policy π
+with respect to the behaviour policy π_b.
+
+blogp: is the log-probability of the actions taken by the behaviour policy.
+logp: is the log-probability of the action taken by the policy π.
+"""
 function IS_weight(blogp, logp)
     return exp(logp - blogp)
 end
@@ -73,9 +89,14 @@ function estimate_return!(
     blogps = view(H.blogps, idxs)
     actions = view(H.actions, idxs)
     rewards = view(H.rewards, idxs)
+    # Perform the importance sampling estimate of the return
+    # based on the log-probabilities of the history,
+    # the actions taken by the behaviour policy, and the newly
+    # computed policy.
     @. G = IS_weight(blogps, actions, (π,)) * rewards
 end
 
+# TODO this should not be called because a subclass of WeightedIS is never instantiated
 function estimate_return!(
     G,
     H::BanditHistory,

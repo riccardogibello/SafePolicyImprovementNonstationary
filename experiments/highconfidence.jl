@@ -52,14 +52,19 @@ returns a symbol indicating if π :safe or :uncertain. :uncertain
 means that it cannot be gauranteed that π is better the πsafe.
 """
 function HICOPI_safety_test(f, π, πsafe, δ)
+    # Calculate the lower bound of the confidence interval for π performances
     pilow = f(π, δ/2.0, :left)
+    # Calculate the upper bound of the confidence interval for πsafe performances
     safehigh = f(πsafe, δ/2.0, :right)
     # println(round(pilow-safehigh, digits=3), "\t", round.(π.probs, digits=2), "\t", round.(get_params(π), digits=3))#, " ", get_params(πsafe))
     # println(round(pilow-safehigh, digits=3), "\t", round.(get_params(π), digits=3))#, " ", get_params(πsafe))
     # println("π low, πsafe high: $pilow, $safehigh")
+    # If the lower bound of the confidence interval for π is greater than the upper bound of the confidence interval for πsafe
     if pilow > safehigh
+        # Return that the policy is safe
         return :safe
     else
+        # Otherwise, return that the policy is uncertain
         return :uncertain
     end
 end

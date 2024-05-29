@@ -5,19 +5,26 @@ using LinearAlgebra
 """
     get_coefs(Φ, ϕτ)
 
-returns least squares coefficients for making predictions
-at observed points Φ and points of interest ϕτ.
+This method returns least squares coefficients for making predictions
+at training timesteps (i.e., W, related to the Φ matrix) 
+and future timesteps (i.e., ϕ, related to the ϕτ matrix).
 
+Φ: the feature matrix for the training timesteps, calculated through the basis function ϕ.
+ϕτ: the feature matrix for the future timesteps, calculated through the basis function ϕ.
+
+# TODO not very clear explanation
 This function is a helper function to be used for predicting
-future points in a time series and for in wild bootstrap.
+through linear regression future points in a time series 
+and in wild bootstrap.
 """
 function get_coefs(Φ, ϕτ)
     # Calculate the pseudo-inverse of the matrix Φ using the Moore-Penrose inverse;
     H = pinv(Φ' * Φ) * Φ'
-    # Calculate the least squares coefficients for making predictions of Y hat
+    # Calculate the least squares coefficients (hat matrix) for making predictions of Y hat
+    # in the training timesteps
     W = Φ * H
-    # Calculate the product between the transformed tau and the H, that is used 
-    # in predicting the performances
+    # Calculate the least squares coefficients (hat matrix) for making predictions of the 
+    # performances in the future timesteps τ
     ϕ = ϕτ * H
     return W, ϕ
 end
@@ -25,21 +32,25 @@ end
 """
     get_preds_and_residual(Y, W, ϕ)
 
-returns the baseline predictions using observed labels Y at points ϕ
-and along with the vector of residuals Y - Ŷ.
-W and ϕ should be the output of get_coefs.
+This method returns the baseline future performance predictions for the time points τ,
+calculated through the fitted past returns Y at the training timesteps.
+The vector of residuals between the observed and the fitted returns is also returned.
+
+Y: the observed returns at the training timesteps.
+W: the least squares coefficients for making predictions of Ŷ in the training timesteps.
+ϕ: the least squares coefficients for making predictions of the performances in the future timesteps τ.
 """
 function get_preds_and_residual(Y, W, ϕ)
-    # Calculate the predicted Y values starting from the W and the observed Y
+    # Calculate the fitted Ŷ return values for the training timesteps 
+    # (i.e., using the W matrix and the observed Y values).
     # Ŷ = Φ * H * Y = W * Y
     Ŷ = W * Y
-    # print(size(Ŷ))
-    # print(size(ϕ))
-    # TODO MSG is this the prediction of the performances calculation? (rho hat)
+    # Predict, based on the past performances Ŷ, the future performances
+    # in the time points τ
     y = ϕ * Ŷ
-    # print(size(y))
-    # Residuals between the observed values of Y and the predicted values of Y
-    # TODO MSG is this the ξ hat in the pseudocode?
+    # Calculate the residuals between the returns in the 
+    # training timesteps (i.e., Y) and the fitted returns of the 
+    # training timesteps (i.e., Ŷ)
     ξ = Y .- Ŷ
     return y, ξ
 end
@@ -107,13 +118,33 @@ function wildbs_CI(
 end
 
 """
-This method computes the coefficients of a non-stationary model.
+This method returns least squares coefficients for making predictions
+at training timesteps (i.e., W, related to the Φ matrix) and the 
+future timesteps (i.e., ϕ, related to the ϕτ matrix) and the TODO.
+
+Φ: the feature matrix for the training timesteps, calculated through the basis function ϕ.
+ϕτ: the feature matrix for the future timesteps, calculated through the basis function ϕ.
+
+# TODO not very clear explanation
+This function is a helper function to be used for predicting
+through linear regression future points in a time series 
+and in wild bootstrap.
 """
 function get_coefst(Φ, ϕτ)
+    # Calculate the pseudo-inverse of the matrix Φ using the Moore-Penrose inverse;
     H = pinv(Φ' * Φ) * Φ'
+    # Calculate the least squares coefficients (hat matrix) for making predictions of Y hat
+    # in the training timesteps
     W = Φ * H
+    # Calculate the least squares coefficients (hat matrix) for making predictions of the 
+    # performances in the future timesteps τ
     ϕ = ϕτ * H
-    # TODO what is this C matrix?
+    # Calculate the difference between the identity matrix and the hat matrix.
+    # This is a projection matrix transforms the target values into the 
+    # residuals of the linear regression model.
+    # The residuals are the differences between the target values and the predicted values, 
+    # and they are orthogonal to the predicted values (i.e., the component that cannot
+    # be explained by a linear combination of the features).
     C = I - W
     return W, ϕ, C
 end
@@ -123,13 +154,23 @@ end
 ϕ: the result of the product between the ϕτ and H.
 """
 function get_preds_and_residual_t(Y, W, ϕ, C)
-    # Calculate the predicted Y values starting from the W and the observed Y
+    # Project the observed values Y onto the column space of Φ, to obtain
+    # the predicted values Ŷ of the performances
     # Ŷ = Φ * H * Y = W * Y
     Ŷ = W * Y
-    # Calculate the predicted performances (later on the mean is computed)
+    # Calculate the predicted performances by transforming the predicted values 
+    # Ŷ with the matrix ϕ. Later the mean is computed on this vector.
     y = ϕ * Ŷ
+    # Calculate the residuals of the predicted values Ŷ by projecting Ŷ onto 
+    # the orthogonal complement of the column space of Φ. 
+    # These are the component of Ŷ that cannot be explained by a linear 
+    # combination of the features (i.e., if there is random noise,
+    # non-linear relationships, important features ignored in the model).
+    # This can be used for assessing the fit of the model and for 
+    # bootstrapping procedures, where the residuals are resampled to generate 
+    # new datasets for model validation.
     x = C * Ŷ
-    # Get the residuals between the observed and the predicted performances 
+    # Get the residuals between the observed values Y and the predicted values Ŷ
     ξ = Y .- Ŷ
     # Being ξ a vector of independent noises, the Diagonal(ξ.^2) is a diagonal matrix
     # representing the co-variance matrix of the mean-zero and heteroscedastic noises ξ.
@@ -137,19 +178,40 @@ function get_preds_and_residual_t(Y, W, ϕ, C)
     # Σ =   ϕτ * H * Diagonal(ξ.^2) * H' * ϕτ' = 
     #       ϕτ * pinv(Φ' * Φ) * Φ' * Diagonal(ξ.^2) * Φ * pinv(Φ' * Φ) * ϕτ'
     Σ = ϕ * Diagonal(ξ.^2) * ϕ'
-    # Get the mean variance of the errors
+    # Get the mean variance of the residuals between the training predictions and 
+    # observations
     v = mean(Σ)
     
     return y, v, x, ξ
 end
 
+"""
+x: the residuals of the fitted returns in the training samples that cannot 
+be explained by the model (e.g., random noise, non-linear relationships,
+important features ignored).
+C: the projection matrix that transforms the target predicted values into 
+the residuals (i.e., the portion that cannot be explained by the model).
+ξ: the residuals between the observed and the fitted returns in the training samples.
+ϕ: the least squares coefficients (hat matrix) for making predictions of 
+the performances in the future timesteps τ.
+"""
 function wildbst_eval(x, C, ξ, ϕ, σ)
+    # Calculate the perturbed residuals ξ̂ = ξ .* σ (actually ξ̂* of the pseudocode)
     ξ̂ = ξ .* σ
-    ξ̂2 = (x .+ C * ξ̂).^2
-    Δŷ = mean(ϕ * ξ̂)
+    ξ̂2 = (x .+ C * ξ̂ ).^2
+    # Predict the mean future error of the predicted performances with respect to the actual 
+    # performances
+    Δŷ = mean(ϕ * ξ̂ )
+    # Compute the co-variance matrix of the estimator of the error over the future predictions
     Σ = ϕ * Diagonal(ξ̂2) * ϕ'
+    # Calculate the mean variance of the estimator of the error over the future predictions
     v̂ = mean(Σ)
 
+    # Return the standardized mean error over the future predicted performances,
+    # calculated as the ratio between:
+    # 1) the mean error over the future predicted performances;
+    # 2) the standard deviation of the estimator of the error over 
+    # the future predictions (line 14 of the pseudocode);
     return Δŷ / √v̂
 end
 
@@ -164,15 +226,50 @@ function bst_CIs(p, v, bsamples, δ::Array{T,1}) where {T}
     return p .- quantile(sort(bsamples), 1.0 .- δ, sorted=true) .* √v
 end
 
+"""
+This method performs a bootstrap procedure to estimate the actual mean
+future predicted performance, taking into account the possible variability
+of the predictions.
+
+y: the predicted future performances.
+v: the value of the mean variance of the residuals that cannot be explained
+by the fitting model on the training samples, wrt the observed ones.
+x: the residuals of the fitted returns in the training samples that cannot 
+be explained by the model (e.g., random noise, non-linear relationships,
+important features ignored).
+ξ: the residuals between the observed and the fitted returns in the training samples.
+ϕ: the least squares coefficients (hat matrix) for making predictions of 
+the performances in the future timesteps τ.
+C: the projection matrix that transforms the target predicted values into 
+the residuals (i.e., the portion that cannot be explained by the model).
+δ: the confidence level.
+num_boot: the number of bootstrap samples.
+rng: the random number generator.
+"""
 function wildbst_CI(y, v, x, ξ, ϕ, C, δ, num_boot,rng)
-    bsamples = [wildbst_eval(x, C, ξ, ϕ, sign.(randn(rng, length(ξ)))) for i in 1:num_boot]
-    # Calculate the mean of the predicted performances (line 5 of Algorithm 1 in the pseudocode)
+    # Generate a number of num_boot bootstrap samples of the standardized mean error
+    # over future predicted performances
+    bsamples = [
+        wildbst_eval(
+            x,
+            C,
+            ξ,
+            ϕ,
+            # Set the list of random perturbations (+-1) to the residuals ξ
+            sign.(randn(rng, length(ξ)))
+        )
+        for _ in 1:num_boot
+    ]
+    # Calculate the mean of the predicted future performances
     p = mean(y)
-    return p - quantile(sort(bsamples), 1.0-δ, sorted=true) * √v #bst_CIs(p, v, bsamples, δ)
+    # Calculate the actual future performance prediction, by subtracting the
+    # (1.0 - δ)-th quantile of the standardized mean error over the future
+    # predicted performances. Therefore, this will represent the upper
+    # bound of a 1.0 - δ confidence interval.
+    return p - quantile(sort(bsamples), 1.0 - δ, sorted=true) * √v # bst_CIs(p, v, bsamples, δ)
 end
 
 # defines the adjoint function for sorting so Zygote can automatically differentiate the sort function.
-
 @adjoint function sort(x)
      p = sortperm(x)
      x[p], x̄ -> (x̄[invperm(p)],)
@@ -180,14 +277,14 @@ end
 
 """
 This method, using basis function ϕ, creates the feature matrices of the 
-observed test time points x, and future time points τ (shifted of the previous 
-L time points).
+observed training timesteps (i.e., x vector), and future time points τ 
+(shifted of the history L time points).
 
 ϕ: the fourier transform function (see "fourierseries" method), that accepts a scalar 
 (i.e. element of x vector) and returns a vector of |C| length, containing the 
 element-wise cosine of the product between C and x.
-x: the observed test time points indices.
-τ: the future time points indices.
+x: the observed training timesteps.
+τ: the future timesteps, shifted of the history L time points.
 """
 function create_features(ϕ, x, τ)
     # Create the omega matrix, by applying the function ϕ to each scalar in x and concatenating

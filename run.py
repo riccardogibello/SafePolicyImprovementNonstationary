@@ -91,7 +91,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--ids',
         metavar='Ids',
-        type=int,
+        type=str,
         help='The number of experiments to be run for the given domain and speed.',
         required=True,
     )

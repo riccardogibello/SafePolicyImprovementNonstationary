@@ -6,6 +6,7 @@ include("history.jl")
 include("offpolicy.jl")
 include("highconfidence.jl")
 include("nonstationary_modeling.jl")
+include("optimizers.jl")
 
 """
 This method is used to calculate a non-stationary wild bootstrap confidence interval
@@ -42,12 +43,20 @@ function nswildbst_CI(
 
     # Create the feature matrices of the test indices and of the future indices
     Φ, ϕτ = create_features(ϕ, idxs, collect(Float64, L+1:L+τ))
+    # Compute the W, ϕ, C matrices
     A, B, C = get_coefst(Φ, ϕτ)
     
     N = length(idxs)
     Y = zeros(Float64, N)
+    # Initialize the Y vector of estimated returns of the policy π wrt 
+    # the history D and the behavior policy
     estimate_return!(Y, D, idxs, π, IS)
+
+    # If the confidence interval to be calculated is the lower bound
+    # of the computed policy (i.e., the upper bound of the confidence 
+    # interval at δ%)
     if tail == :left
+        # Return the value of the predicted performances 
         return wildbst_CI(
             get_preds_and_residual_t(Y, A, B, C)..., 
             B, 
@@ -56,6 +65,9 @@ function nswildbst_CI(
             num_boot, 
             rng
         )
+    # If the confidence interval to be calculated is the upper bound
+    # of the safe policy (i.e., the lower bound of the confidence interval
+    # at δ%)
     elseif tail == :right
         return wildbst_CI(
             get_preds_and_residual_t(Y, A, B, C)...,
@@ -246,18 +258,54 @@ function off_policy_natgrad_bs!(
     IS::TI, 
     rng
 ) where {T,TA,TI<:UnweightedIS}
+    # Update the policy parameters (for the μ and, optionally, the σ vectors)
+    # by setting the provided ones 
     set_params!(π, θ)
+    # Compute the Fisher Information matrix, to identify how much the sample (bandit history) can explain
+    # the parameters of the policy; the Fisher information matrix measures the curvature of the parameter 
+    # space (areas of high curvature are dangerous, due to possibility to overshoot the minimum and diverge;
+    # areas of low curvature are safe, but convergence is slow).
     compute_fisher!(F, ψ, π)
 
+    # Populate the Y array with the estimated returns of the policy π wrt the history D
+    # and the behavior policy; add an entropy term to it, to induce exploration;
     estimate_entropyreturn!(Y, D, idxs, π, λ, IS)
-    GY .= Zygote.gradient(y->wildbs_CI(get_preds_and_residual(y, A, B)..., B, δ, num_boot, aggf, rng), Y)[1]
 
+    # Compute the gradients of the "wildbs_CI" function, with respect to small changes 
+    # in the input Y (estimated returns with the importance sampling method); 
+    # GY is a vector of the same size of Y;
+    GY .= Zygote.gradient(
+        y->wildbs_CI(
+            get_preds_and_residual(y, A, B)..., 
+            B, 
+            δ, 
+            num_boot, 
+            aggf, 
+            rng
+        ), 
+        Y
+    )[1]
+
+    # Set all the parameter values for the currently computed gradient to zero
     fill!(G, 0.0)
+    # For each timestep used for training
     for (i,idx) in enumerate(idxs)
-        logp = gradient_logp!(ψ, π, D.actions[idx])
+        # Compute the gradient of the log probability of the action and store it in the ψ vector
+        gradient_logp!(ψ, π, D.actions[idx])
+        # Update the gradient vector by adding the product between:
+        # 1) the gradient of the log probability of the actions
+        # 2) the estimated return of the policy π wrt the history D and the behavior policy
+        # 3) the gradient of the "wildbs_CI" function
         @. G += ψ * Y[i] * GY[i]
     end
+
+    # Normalize the gradient by the number of timesteps used for training
     G ./= length(idxs)
+
+    # Pre-multiply the gradient with the inverse of the Fisher information matrix, 
+    # which is a measure of the curvature of the parameter space. 
+    # This adjusts the gradient (step size) in each direction according to the curvature, 
+    # which can lead to faster and more stable learning.
     G .= inv(F) * G
 end
 
@@ -282,20 +330,52 @@ function off_policy_natgrad_bs_old!(
 ) where {T,TA,TI<:UnweightedIS}
     # Update the theta parameters of the policy
     set_params!(π, θ)
-
+    # Compute the Fisher Information matrix, to identify how much the sample (bandit history) can explain
+    # the parameters of the policy; the Fisher information matrix measures the curvature of the parameter 
+    # space (areas of high curvature are dangerous, due to possibility to overshoot the minimum and diverge;
+    # areas of low curvature are safe, but convergence is slow).
     compute_fisher!(F, ψ, π)
 
+    # Populate the Y array with the estimated returns of the policy π wrt the history D
+    # and the behavior policy;
     estimate_return!(Y, D, idxs, π, IS)
-    GY .= Zygote.gradient(y->wildbs_CI(get_preds_and_residual(y, A, B)..., B, δ, num_boot, aggf, rng), Y)[1]
+    # Compute the gradients of the "wildbs_CI" function, with respect to small changes 
+    # in the input Y (estimated returns with the importance sampling method); 
+    # GY is a vector of the same size of Y;
+    GY .= Zygote.gradient(
+        y->wildbs_CI(
+            get_preds_and_residual(y, A, B)..., 
+            B, 
+            δ, 
+            num_boot, 
+            aggf, 
+            rng
+            ), 
+            Y
+    )[1]
 
+    # Set all the parameter values for the currently computed gradient to zero
     fill!(G, 0.0)
+    # Initialize the gradient vector with the entropy term
     G .= λ .* gradient_entropy(π)
+    # For each timestep used for training
     for (i,idx) in enumerate(idxs)
-        logp = gradient_logp!(ψ, π, D.actions[idx])
+        # Compute the gradient of the log probability of the action and store it in the ψ vector
+        gradient_logp!(ψ, π, D.actions[idx])
+        # Update the gradient vector by adding the product between:
+        # 1) the gradient of the log probability of the actions
+        # 2) the estimated return of the policy π wrt the history D and the behavior policy
+        # 3) the gradient of the "wildbs_CI" function
         @. G += ψ * Y[i] * GY[i]
     end
 
+    # Normalize the gradient by the number of timesteps used for training
     G ./= length(idxs)
+
+    # Pre-multiply the gradient with the inverse of the Fisher information matrix, 
+    # which is a measure of the curvature of the parameter space. 
+    # This adjusts the gradient (step size) in each direction according to the curvature, 
+    # which can lead to faster and more stable learning.
     G .= inv(F) * G
 end
 
@@ -444,7 +524,8 @@ function maximize_nsbs_lower!(
     num_iters, 
     rng
 )
-    # Get the theta parameters used to model the policy
+    # Get the parameters used to model the policy 
+    # (θ, in the bandit case; μ (and σ), in the glucose case)
     θ = get_params(π)
     # Prepare the function that is used to perform the off-policy natural gradient bootstrap method
     g! = nsbs_lower_grad(

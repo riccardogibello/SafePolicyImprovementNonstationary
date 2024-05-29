@@ -1,3 +1,6 @@
+include("normalpolicy.jl")
+include("softmaxpolicy.jl")
+
 abstract type AbstractBandit end
 abstract type AbstractDiscreteBandit <: AbstractBandit end
 abstract type AbstractContinuousBandit <: AbstractBandit end
@@ -37,20 +40,6 @@ end
 struct DiscreteBanditParams{T} <: AbstractDiscreteBandit where {T}
     μ::Array{T,1}
     σ::Array{T,1}
-end
-
-"""
-This is the method used in the Glucose experiment.
-
-"""
-function sample_reward!(
-    b::NonstationaryQuadraticBanditParams{T},
-    action,
-    rng
-) where {T}
-    r = -0.1*(b.a*action[1] + b.b*cos(b.t[1] * b.τ))^2 + b.c * randn(rng)
-    b.t[1] += 1.0
-    return r
 end
 
 """

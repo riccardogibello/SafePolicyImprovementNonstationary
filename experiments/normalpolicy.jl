@@ -73,6 +73,13 @@ function entropy(policy::StatelessNormalPolicy)
     return 0.5 * sum(log(2 * π * ℯ * policy.σ^2))  # note ℯ is \euler
 end
 
+"""
+This method calculates the gradient of the entropy in the modeling function 
+of the policy (i.e., the parameters μ and σ that model it). 
+Notice that the gradient is different from zero only for the standard 
+deviation vector σ, since the entropy of a normal distribution is a function 
+of the standard deviation (i.e., H = 0.5 * log(2 * π * ℯ * σ^2) + 0.5.).
+"""
 function gradient_entropy(policy::StatelessNormalPolicy{TP,true}) where {TP}
     N = length(policy.μ)
     g = zeros(2*N)
@@ -80,14 +87,24 @@ function gradient_entropy(policy::StatelessNormalPolicy{TP,true}) where {TP}
     return g
 end
 
+"""
+This method calculates the gradient of the entropy in the modeling function 
+of the policy (i.e., the parameters μ and σ that model it). 
+Being the standard deviation vector σ a constant, the gradient is zero.
+"""
 function gradient_entropy(policy::StatelessNormalPolicy{TP,false}) where {TP}
     return zeros(size(policy.μ))
 end
 
 function set_params!(π::StatelessNormalPolicy{T,true}, θ::Array{T}) where {T}
+    # Get the total number of elements in the policy's mean vector 
+    # (at the beginning set to two, while the given θ vector has size 5)
     N = length(π.μ)
+    # Set the mean vector of the policy to the first N elements of θ
     @. π.μ = θ[1:N]
+    # Set the standard deviation vector of the policy to the elements of θ[N+1:end]
     @. π.σ = θ[N+1:end]
+    # Clamp the standard deviation vector to be between 0.001 and 100
     clamp!(π.σ, 0.001, 100)
 end
 

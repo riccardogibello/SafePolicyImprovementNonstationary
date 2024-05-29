@@ -8,29 +8,36 @@ using Distributions
 using Plots
 using Profile
 using ProfileView
+using Base.Threads
+using Distributed
 
+using Logging
+Logging.global_logger(SimpleLogger(stderr, Logging.Error))
 
-include("normalpolicy.jl")
-include("softmaxpolicy.jl")
+# Set the number of processes to be used in the experiment
+max_processes = 10
+# The newly created workers will span from 2 to max_processes + 1
+addprocs(max_processes)
+println("Number of active processes: ", nprocs())
 
-include("optimizers.jl")
-include("offpolicy.jl")
-
-include("history.jl")
-
-include("environments.jl")
-include("nonstationary_modeling.jl")
-include("nonstationary_pi.jl")
-
-struct SafetyPerfRecord{T1, T2} <: Any where {T1,T2}
-    t::Array{T1,1}
-    Jpi::Array{T2,1}
-    Jsafe::Array{T2,1}
-
-    function SafetyPerfRecord(::Type{T1}, ::Type{T2}) where {T1,T2}
-        new{T1,T2}(Array{T1,1}(), Array{T2,1}(), Array{T2,1}())
+@everywhere begin
+    function get_max_processes()
+        return 11
     end
 end
+
+
+@everywhere include("normalpolicy.jl")
+@everywhere include("softmaxpolicy.jl")
+
+@everywhere include("optimizers.jl")
+@everywhere include("offpolicy.jl")
+
+@everywhere include("history.jl")
+
+@everywhere include("environments.jl")
+@everywhere include("nonstationary_modeling.jl")
+@everywhere include("nonstationary_pi.jl")
 
 function plot_results(rec::SafetyPerfRecord, rews, tidxs, piflag, title)
     p1 = plot(title=title)
@@ -71,7 +78,7 @@ end
 
 
 # TODO ns is a bit misleading since it is called also for non-stationary problems, isn't it?
-function optimize_nsdbandit_safety(
+@everywhere function optimize_nsdbandit_safety(
     num_episodes,
     rng,
     speed,
@@ -233,215 +240,217 @@ function optimize_nsdbandit_safety(
     return (rec, D.rewards, tidx, piflag)
 end
 
-"""
-This method receives as input the results of the previous experiments 
-(i.e., the record data structures, the reward values from the bandit, 
-the start and end timesteps on any interaction of the agent with the environment (i.e. start - end = tau), 
-and the flags indicating if the policy computed was used against the safe one).
+@everywhere begin 
+    """
+        This method receives as input the results of the previous experiments 
+        (i.e., the record data structures, the reward values from the bandit, 
+        the start and end timesteps on any interaction of the agent with the environment (i.e. start - end = tau), 
+        and the flags indicating if the policy computed was used against the safe one).
 
 
-The result given by the method is composed by timestamps, 
-the mean and standard deviation of the unsafe policy, the mean and standard deviation 
-of the found policy, the mean and standard deviation of the performance,
-and the mean and standard deviation of the performance of the algorithm.
-"""
-function combine_trials(
-    results
-)
-    T = length(results)
-    N = length(results[1][2])
+        The result given by the method is composed by timestamps, 
+        the mean and standard deviation of the unsafe policy, the mean and standard deviation 
+        of the found policy, the mean and standard deviation of the performance,
+        and the mean and standard deviation of the performance of the algorithm.
+    """
+    function combine_trials(
+        results
+    )
+        T = length(results)
+        N = length(results[1][2])
 
-    # Take the list of timestamps of the first experiment (they are the same for all the experiments)
-    t = results[1][1].t
-    
-    # Initialize matrices with NxT dimension
-    unsafe = zeros((N, T))
-    notnsf = zeros((N, T))
-    Jpi = zeros((N, T))
-    Jalg = zeros((N, T))
+        # Take the list of timestamps of the first experiment (they are the same for all the experiments)
+        t = results[1][1].t
+        
+        # Initialize matrices with NxT dimension
+        unsafe = zeros((N, T))
+        notnsf = zeros((N, T))
+        Jpi = zeros((N, T))
+        Jalg = zeros((N, T))
 
-    # For each of the results of the trials (k is the index of the trial)
-    for (k, (rec, _, tidxs, piflag)) in enumerate(results)
-        unf = zeros(N)
-        nnsf = zeros(N)
+        # For each of the results of the trials (k is the index of the trial)
+        for (k, (rec, _, tidxs, piflag)) in enumerate(results)
+            unf = zeros(N)
+            nnsf = zeros(N)
+            # For each starting and ending timestep in the tidxs array
+            for (i, (ts, te)) in enumerate(tidxs)
+                # If the computed new policy was used against the 
+                # safe one (i.e., passed the safety test)
+                if piflag[i]
+                    # Set to 1 the values of the notnsf array from the start to the end timestep
+                    nnsf[ts:te] .= 1
+                    # If the mean return of the safe policy would have been higher than the one of the computed policy
+                    if mean(rec.Jsafe[ts:te]) > mean(rec.Jpi[ts:te])
+                        # Set to 1 the values of the unsafe array from the start to the end timestep
+                        unf[ts:te] .= 1
+                    end
+                end
+            end
+            # Update the unsafe matrix by adding, as k-th column, the values of the unf array
+            @. unsafe[:, k] = unf
+            # Update the notnsf matrix by adding, as k-th column, the values of the nnsf array
+            @. notnsf[:, k] = nnsf
+            # Update the Jpi matrix by adding, as k-th column, the values of the Jpi array of the k-th trial
+            @. Jpi[:, k] += rec.Jpi
+            # Update the Jalg matrix by adding, as k-th column, the linear combination of the performances 
+            # of the safe and computed policies (based on when each of them was adopted).
+            @. Jalg[:, k] += nnsf * rec.Jpi + (1 - nnsf) * rec.Jsafe
+        end
+
+        # Perform the mean across the second dimension of each matrix (i.e., across experiments), creating
+        # a set of 1D vectors (the standard deviation vectors are divided by the square root of the number of trials);
+        # mnunsafe = % of times, for each timestep, that the computed policy was used against the safe one but had a lower return
+        mnunsafe = vec(mean(unsafe, dims=2))
+        stdunsafe = vec(std(unsafe, dims=2)) ./ √T
+        # mnfound = % of times, for each timestep, that the computed policy was used against the safe one
+        mnfound = vec(mean(notnsf, dims=2))
+        stdfound = vec(std(notnsf, dims=2)) ./ √T
+        # mnJpi = mean performance of the computed policy
+        mnJpi = vec(mean(Jpi, dims=2))
+        stdJpi = vec(std(Jpi, dims=2)) ./ √T
+        # mnJalg = mean performance of the computed policy if it was used, otherwise the safe policy
+        mnJalg = vec(mean(Jalg, dims=2))
+        stdJalg = vec(mean(Jalg, dims=2)) ./ √T
+        return t, (mnunsafe, stdunsafe), (mnfound, stdfound), (mnJpi, stdJpi), (mnJalg, stdJalg)
+    end
+
+    """
+    This method plots, for the given results:
+    1) the performances of the BASELINE and SPIN algorithms.
+    2) the percentage of times across the experiments in which the computed policy was used against the safe one
+    (i.e., passed the safety test) and had a lower return.
+    3) the percentage of times across the experiments in which the computed policy was used against the safe one
+    (i.e., passed the safety test).
+
+    res1: the results of the set of experiments related to the BASELINE algorithm, which is not aware of the non-stationarity of the environment.
+    res2: the results of the set of experiments related to the SPIN algorithm, which is aware of the non-stationarity of the environment.
+    baseline: the performance of the π_safe policy.
+    labels: the labels of the two algorithms.
+    title: the title of the plot.
+    """
+    function learning_curves(
+        # TODO shouldn't it be more clear to call these res_baseline and res_spin?
+        res1, 
+        res2,
+        # TODO shouldn't it be more clear to call this π_safe_perf?
+        baseline, 
+        labels, 
+        title,
+        path,
+    )
+        p1 = plot(title=title)
+        p2 = plot()
+
+        # ============================== PLOT 1 ASSIGNMENTS ==============================
+        # Unpack the results of the set of experiments related to the agent which is not aware of the 
+        # non-stationarity of the environment
+        t1, safe1, found1, Jpi1, Jalg1 = res1
+        # Set the line that contains the performances of the π_safe policy (dotted black line)
+        plot!(p1, t1, baseline, lc=:black, label="π_safe")
+        # Set the line that contains the performance of the BASELINE algorithm (i.e., not accounting
+        # for the non-stationarity of the environment, red line)
+        plot!(p1, t1, Jalg1[1], ribbon=Jalg1[2], lc=:crimson, fillalpha=0.3, label=labels[1])
+        # Set the line that contains the performances of the π_c policy of the BASELINE algorithm 
+        # (dotted red line)
+        plot!(p1, t1, Jpi1[1], lc=:crimson, linestyle=:dot, label=nothing)
+
+        # Unpack the results of the set of experiments related to the agent which is aware of the 
+        # non-stationarity of the environment
+        t2, safe2, found2, Jpi2, Jalg2 = res2
+        # Set the line that contains the performances of the SPIN algorithm (blue line)
+        plot!(p1, t2, Jalg2[1], ribbon=Jalg2[2], lc=:dodgerblue, fillalpha=0.3, label=labels[2])
+        # Set the line that contains the performances of the π_c policy of the SPIN algorithm (dotted blue line)
+        plot!(p1, t2, Jpi2[1], lc=:dodgerblue, linestyle=:dot, label=nothing, legend=:topleft)
+        
+        # Set the x and y axis labels
+        xlabel!(p1, "Episode")
+        ylabel!(p1, "Performance")
+        # ================================================================================
+
+        # ============================== PLOT 2 ASSIGNMENTS ==============================
+        # Plot, for the BASELINE, the percentage of times across the experiments in which the computed policy was used
+        # against the safe one (i.e., passed the safety test) (red dotted line)
+        plot!(p2, t1, found1[1], ribbon=found1[2], linestyle=:dash, lc=:crimson, fillalpha=0.3, label="Canditate Returned-Baseline")
+        # Plot, for the BASELINE, the percentage of times across the experiments in which the computed policy was used
+        # against the safe one (i.e., passed the safety test) but had a lower return (red line)
+        plot!(p2, t1, safe1[1], ribbon=safe1[2], linestyle=:solid, lc=:crimson, fillalpha=0.3,  label="Unsafe Policy-Baseline")
+        # Plot, for the SPIN algorithm, the percentage of times across the experiments in which the computed policy was used
+        # against the safe one (i.e., passed the safety test) (blue dotted line)
+        plot!(p2, t2, found2[1], ribbon=found2[2], linestyle=:dash, lc=:dodgerblue, fillalpha=0.3,  label="Canditate Returned-SPIN")
+        # Plot, for the SPIN algorithm, the percentage of times across the experiments in which the computed policy was used
+        # against the safe one (i.e., passed the safety test) but had a lower return (blue line)
+        plot!(p2, t2, safe2[1], ribbon=safe2[2], linestyle=:solid, lc=:dodgerblue, fillalpha=0.3,  label="Unsafe Policy-SPIN", legend=:topleft)
+
+        # Set the x and y axis labels
+        xlabel!(p2, "Episode")
+        ylabel!(p2, "Probability")
+        # ================================================================================
+
+        p = plot(p1, p2, layout=(2,1))
+        savefig(
+            p, 
+            joinpath(path, "learningcurve.pdf")
+            )
+        return p
+    end
+
+    """
+    This method saves the results of the given experiment.
+
+    fpath: the path to the file where the results will be saved.
+    rec: the record of the performance of the policy.
+    rews: an array of the rewards obtained at each timestep and 
+    stored in the bandit history.
+    piflag: an array of booleans that specify whether, at each timestep, 
+    the safe policy was used because the computed one was unsafe.
+    save_res: a boolean that specifies whether the results should be saved
+    in a CSV file.
+    """
+    function save_results(
+        rec::SafetyPerfRecord, 
+        rews, 
+        tidxs, 
+        piflag,
+    )
+        # unsafe 
+        unsafe = zeros(length(rews))
+        # notnsf = a mask that indicates whether, at the given timestep index, the candidate policy
+        # was used (because considered safe)
+        notnsf = zeros(length(rews))
         # For each starting and ending timestep in the tidxs array
         for (i, (ts, te)) in enumerate(tidxs)
-            # If the computed new policy was used against the 
-            # safe one (i.e., passed the safety test)
+            # If the computed new policy was used against the safe one (i.e., passed the safety test)
             if piflag[i]
                 # Set to 1 the values of the notnsf array from the start to the end timestep
-                nnsf[ts:te] .= 1
+                notnsf[ts:te] .= 1
                 # If the mean return of the safe policy would have been higher than the one of the computed policy
                 if mean(rec.Jsafe[ts:te]) > mean(rec.Jpi[ts:te])
                     # Set to 1 the values of the unsafe array from the start to the end timestep
-                    unf[ts:te] .= 1
+                    unsafe[ts:te] .= 1
                 end
             end
         end
-        # Update the unsafe matrix by adding, as k-th column, the values of the unf array
-        @. unsafe[:, k] = unf
-        # Update the notnsf matrix by adding, as k-th column, the values of the nnsf array
-        @. notnsf[:, k] = nnsf
-        # Update the Jpi matrix by adding, as k-th column, the values of the Jpi array of the k-th trial
-        @. Jpi[:, k] += rec.Jpi
-        # Update the Jalg matrix by adding, as k-th column, the linear combination of the performances 
-        # of the safe and computed policies (based on when each of them was adopted).
-        @. Jalg[:, k] += nnsf * rec.Jpi + (1 - nnsf) * rec.Jsafe
+        # Compute the mean performance as the mean of the rewards over all the timesteps
+        obsperf = mean(rews)
+        # Compute the mean performance of the candidate policy as the mean of the Jpi values
+        canperf = mean(rec.Jpi)
+        # Compute the mean performance of the algorithm as the mean of the Jpi values if the policy was safe,
+        # otherwise the mean of the Jsafe values
+        algperf = mean(notnsf .* rec.Jpi .+ (1 .- notnsf) .* rec.Jsafe)
+        # Compute the foundpct as the percentage over all the timesteps in which the candidate policy was used
+        # against the safe one
+        foundpct = mean(notnsf)
+        # Compute the violation index, that is the percentage of timesteps in which the candidate policy 
+        # was used against the safe one but had a lower return
+        violation = mean(unsafe)
+        # Compute the regret as the mean between the difference of the algorithm performance and the safe policy performance
+        # TODO Wouldn't it be more intuitive to call it gain? Because it is > 0 when the actual algorithm performances outperform
+        # the safe policy ones
+        regret = mean(notnsf .* rec.Jpi .+ (1 .- notnsf) .* rec.Jsafe .- rec.Jsafe)
+        # Return all the results in a single array
+        sumres = [obsperf, canperf, algperf, regret, foundpct, violation]
+        return sumres
     end
-
-    # Perform the mean across the second dimension of each matrix (i.e., across experiments), creating
-    # a set of 1D vectors (the standard deviation vectors are divided by the square root of the number of trials);
-    # mnunsafe = % of times, for each timestep, that the computed policy was used against the safe one but had a lower return
-    mnunsafe = vec(mean(unsafe, dims=2))
-    stdunsafe = vec(std(unsafe, dims=2)) ./ √T
-    # mnfound = % of times, for each timestep, that the computed policy was used against the safe one
-    mnfound = vec(mean(notnsf, dims=2))
-    stdfound = vec(std(notnsf, dims=2)) ./ √T
-    # mnJpi = mean performance of the computed policy
-    mnJpi = vec(mean(Jpi, dims=2))
-    stdJpi = vec(std(Jpi, dims=2)) ./ √T
-    # mnJalg = mean performance of the computed policy if it was used, otherwise the safe policy
-    mnJalg = vec(mean(Jalg, dims=2))
-    stdJalg = vec(mean(Jalg, dims=2)) ./ √T
-    return t, (mnunsafe, stdunsafe), (mnfound, stdfound), (mnJpi, stdJpi), (mnJalg, stdJalg)
-end
-
-"""
-This method plots, for the given results:
-1) the performances of the BASELINE and SPIN algorithms.
-2) the percentage of times across the experiments in which the computed policy was used against the safe one
-(i.e., passed the safety test) and had a lower return.
-3) the percentage of times across the experiments in which the computed policy was used against the safe one
-(i.e., passed the safety test).
-
-res1: the results of the set of experiments related to the BASELINE algorithm, which is not aware of the non-stationarity of the environment.
-res2: the results of the set of experiments related to the SPIN algorithm, which is aware of the non-stationarity of the environment.
-baseline: the performance of the π_safe policy.
-labels: the labels of the two algorithms.
-title: the title of the plot.
-"""
-function learning_curves(
-    # TODO shouldn't it be more clear to call these res_baseline and res_spin?
-    res1, 
-    res2,
-    # TODO shouldn't it be more clear to call this π_safe_perf?
-    baseline, 
-    labels, 
-    title,
-    path,
-)
-    p1 = plot(title=title)
-    p2 = plot()
-
-    # ============================== PLOT 1 ASSIGNMENTS ==============================
-    # Unpack the results of the set of experiments related to the agent which is not aware of the 
-    # non-stationarity of the environment
-    t1, safe1, found1, Jpi1, Jalg1 = res1
-    # Set the line that contains the performances of the π_safe policy (dotted black line)
-    plot!(p1, t1, baseline, lc=:black, label="π_safe")
-    # Set the line that contains the performance of the BASELINE algorithm (i.e., not accounting
-    # for the non-stationarity of the environment, red line)
-    plot!(p1, t1, Jalg1[1], ribbon=Jalg1[2], lc=:crimson, fillalpha=0.3, label=labels[1])
-    # Set the line that contains the performances of the π_c policy of the BASELINE algorithm 
-    # (dotted red line)
-    plot!(p1, t1, Jpi1[1], lc=:crimson, linestyle=:dot, label=nothing)
-
-    # Unpack the results of the set of experiments related to the agent which is aware of the 
-    # non-stationarity of the environment
-    t2, safe2, found2, Jpi2, Jalg2 = res2
-    # Set the line that contains the performances of the SPIN algorithm (blue line)
-    plot!(p1, t2, Jalg2[1], ribbon=Jalg2[2], lc=:dodgerblue, fillalpha=0.3, label=labels[2])
-    # Set the line that contains the performances of the π_c policy of the SPIN algorithm (dotted blue line)
-    plot!(p1, t2, Jpi2[1], lc=:dodgerblue, linestyle=:dot, label=nothing, legend=:topleft)
-    
-    # Set the x and y axis labels
-    xlabel!(p1, "Episode")
-    ylabel!(p1, "Performance")
-    # ================================================================================
-
-    # ============================== PLOT 2 ASSIGNMENTS ==============================
-    # Plot, for the BASELINE, the percentage of times across the experiments in which the computed policy was used
-    # against the safe one (i.e., passed the safety test) (red dotted line)
-    plot!(p2, t1, found1[1], ribbon=found1[2], linestyle=:dash, lc=:crimson, fillalpha=0.3, label="Canditate Returned-Baseline")
-    # Plot, for the BASELINE, the percentage of times across the experiments in which the computed policy was used
-    # against the safe one (i.e., passed the safety test) but had a lower return (red line)
-    plot!(p2, t1, safe1[1], ribbon=safe1[2], linestyle=:solid, lc=:crimson, fillalpha=0.3,  label="Unsafe Policy-Baseline")
-    # Plot, for the SPIN algorithm, the percentage of times across the experiments in which the computed policy was used
-    # against the safe one (i.e., passed the safety test) (blue dotted line)
-    plot!(p2, t2, found2[1], ribbon=found2[2], linestyle=:dash, lc=:dodgerblue, fillalpha=0.3,  label="Canditate Returned-SPIN")
-    # Plot, for the SPIN algorithm, the percentage of times across the experiments in which the computed policy was used
-    # against the safe one (i.e., passed the safety test) but had a lower return (blue line)
-    plot!(p2, t2, safe2[1], ribbon=safe2[2], linestyle=:solid, lc=:dodgerblue, fillalpha=0.3,  label="Unsafe Policy-SPIN", legend=:topleft)
-
-    # Set the x and y axis labels
-    xlabel!(p2, "Episode")
-    ylabel!(p2, "Probability")
-    # ================================================================================
-
-    p = plot(p1, p2, layout=(2,1))
-    savefig(
-        p, 
-        joinpath(path, "learningcurve.pdf")
-        )
-    return p
-end
-
-"""
-This method saves the results of the given experiment.
-
-fpath: the path to the file where the results will be saved.
-rec: the record of the performance of the policy.
-rews: an array of the rewards obtained at each timestep and 
-stored in the bandit history.
-piflag: an array of booleans that specify whether, at each timestep, 
-the safe policy was used because the computed one was unsafe.
-save_res: a boolean that specifies whether the results should be saved
-in a CSV file.
-"""
-function save_results(
-    rec::SafetyPerfRecord, 
-    rews, 
-    tidxs, 
-    piflag,
-)
-    # unsafe 
-    unsafe = zeros(length(rews))
-    # notnsf = a mask that indicates whether, at the given timestep index, the candidate policy
-    # was used (because considered safe)
-    notnsf = zeros(length(rews))
-    # For each starting and ending timestep in the tidxs array
-    for (i, (ts, te)) in enumerate(tidxs)
-        # If the computed new policy was used against the safe one (i.e., passed the safety test)
-        if piflag[i]
-            # Set to 1 the values of the notnsf array from the start to the end timestep
-            notnsf[ts:te] .= 1
-            # If the mean return of the safe policy would have been higher than the one of the computed policy
-            if mean(rec.Jsafe[ts:te]) > mean(rec.Jpi[ts:te])
-                # Set to 1 the values of the unsafe array from the start to the end timestep
-                unsafe[ts:te] .= 1
-            end
-        end
-    end
-    # Compute the mean performance as the mean of the rewards over all the timesteps
-    obsperf = mean(rews)
-    # Compute the mean performance of the candidate policy as the mean of the Jpi values
-    canperf = mean(rec.Jpi)
-    # Compute the mean performance of the algorithm as the mean of the Jpi values if the policy was safe,
-    # otherwise the mean of the Jsafe values
-    algperf = mean(notnsf .* rec.Jpi .+ (1 .- notnsf) .* rec.Jsafe)
-    # Compute the foundpct as the percentage over all the timesteps in which the candidate policy was used
-    # against the safe one
-    foundpct = mean(notnsf)
-    # Compute the violation index, that is the percentage of timesteps in which the candidate policy 
-    # was used against the safe one but had a lower return
-    violation = mean(unsafe)
-    # Compute the regret as the mean between the difference of the algorithm performance and the safe policy performance
-    # TODO Wouldn't it be more intuitive to call it gain? Because it is > 0 when the actual algorithm performances outperform
-    # the safe policy ones
-    regret = mean(notnsf .* rec.Jpi .+ (1 .- notnsf) .* rec.Jsafe .- rec.Jsafe)
-    # Return all the results in a single array
-    sumres = [obsperf, canperf, algperf, regret, foundpct, violation]
-    return sumres
 end
 
 """
@@ -509,7 +518,7 @@ function sample_hyperparams(
     return params
 end
 
-function run_trials(
+@everywhere function run_trials(
     seed,
     save_dir,
     n_trials,
@@ -535,41 +544,68 @@ function run_trials(
     
     trial_results = []
     trial_hyperparams = []
+    futures = []
+
+    max_process_index = get_max_processes()
+    proc_index = 2
+    tot_processed = 0
     # Loop over the number of trials
-    for _ in 1:n_trials
+    for t_index in 1:n_trials
+        if proc_index == 1
+            # raise an exception
+            throw(ArgumentError("Too many processes"))
+        end
+        print("Started trial $t_index with hyperparameters $(hyps) on process $proc_index\n")
         # Run the optimization for the non-stationary bandit safety problem
-        res = optimize_nsdbandit_safety(
+        future = @spawnat proc_index optimize_nsdbandit_safety(
             num_episodes, 
             rng, 
             speed, 
             hyps, 
         )
+        push!(futures, future)
+        proc_index += 1
+        
+        if length(futures) == max_process_index - 1 || tot_processed == n_trials
+            for future in futures
+                res = fetch(future)
+                # Remove the future from the list of futures
+                futures = futures[2:end]
+                tot_processed += 1
+        
+                # Add the results to the list of results
+                push!(trial_results, res)
+                # Add the hyperparameters to the list of hyperparameters
+                push!(trial_hyperparams, hyps)
+        
+                # Create a string for the current experiment results, composed by:
+                # - hyperparameters
+                # - observed performance
+                # - candidate performance
+                # - algorithm performance
+                # - regret (i.e., difference between algorithm and safe policy performance)
+                # - found percentage (i.e., percentage of times the candidate policy was used)
+                # - violation percentage (i.e., percentage of times the candidate policy was used but had a lower return)
+                tmp_result_row = join([
+                    hyps..., 
+                    save_results(res[1], res[2], res[3], res[4])...
+                    ], 
+                    ','
+                )
+        
+                # Write the results of the current experiment
+                write(file, "$(tmp_result_row)\n")
+        
+                # Flush the file to ensure the result line is written
+                flush(file)
 
-        # Add the results to the list of results
-        push!(trial_results, res)
-        # Add the hyperparameters to the list of hyperparameters
-        push!(trial_hyperparams, hyps)
-
-        # Create a string for the current experiment results, composed by:
-        # - hyperparameters
-        # - observed performance
-        # - candidate performance
-        # - algorithm performance
-        # - regret (i.e., difference between algorithm and safe policy performance)
-        # - found percentage (i.e., percentage of times the candidate policy was used)
-        # - violation percentage (i.e., percentage of times the candidate policy was used but had a lower return)
-        tmp_result_row = join([
-            hyps..., 
-            save_results(res[1], res[2], res[3], res[4])...
-            ], 
-            ','
-        )
-
-        # Write the results of the current experiment
-        write(file, "$(tmp_result_row)\n")
-
-        # Flush the file to ensure the result line is written
-        flush(file)
+                # If the t_index is not the last one, break and send a new job
+                if t_index < n_trials
+                    break
+                end
+                # Otherwise, consume all the futures
+            end
+        end
     end
 
     return trial_hyperparams, trial_results
@@ -609,13 +645,23 @@ function runsweep(
     # Initialize a random number generator with the provided seed
     rng = Random.MersenneTwister(seed)
 
-    
-    # Sample the hyperparameters with a Fourier basis order of 0
+        # Sample the hyperparameters with a Fourier basis order of 0
     hyps = sample_hyperparams(
         0,
         rng
     )
-    print("hyps: $hyps\n")
+    """future_baseline = @spawnat 1 run_trials(
+        seed,
+        save_dir,
+        trials,
+        num_episodes,
+        "BASELINE",
+        speed,
+        hyps,
+        rng,
+    )"""
+    
+
     _, baseline_trial_results = run_trials(
         seed,
         save_dir,
@@ -625,7 +671,8 @@ function runsweep(
         speed,
         hyps,
         rng,
-    )
+        )
+
     # Replace the Fourier basis order with a random number in the SPIN algorithm experiment
     fourier_basis_order = round(Int, sample_hyperparams(speed, rng)[4])
     hyps = [
@@ -635,7 +682,20 @@ function runsweep(
         # cast the following to Int64
         fourier_basis_order
     ]
-    print("hyps: $hyps\n")
+    """future_spin = @spawnat 1 run_trials(
+        seed,
+        save_dir,
+        trials,
+        num_episodes,
+        "SPIN",
+        speed,
+        hyps,
+        rng,
+    )
+
+    _, baseline_trial_results = fetch(future_baseline)
+    _, spin_trial_results = fetch(future_spin)"""
+
     _, spin_trial_results = run_trials(
         seed,
         save_dir,
@@ -794,6 +854,7 @@ function tmp(
     )
 end
 
+# TODO remove the following two functions
 function isprime(n::Int)
     if n < 2
         return false
@@ -890,8 +951,9 @@ function main()
     # of trials ("num_episodes" each), saving the results in the given directory
     # Initialize the profiler with a larger buffer and/or larger delay
     # Buffer size = 10 million, delay = 0.01 seconds
-    Profile.init(n = 10^7, delay = 0.01)
-    ProfileView.@profview runsweep(
+    # Profile.init(n = 10^7, delay = 0.01)
+    # ProfileView.@profview runsweep(
+    runsweep(
         seed, 
         save_dir, 
         trials, 
@@ -899,10 +961,6 @@ function main()
         num_episodes
     )
     end
-    """# Open a file to write the profile results
-    prof_file = open("profile_results.txt", "w")
-    # Write the profile results in a flat manner to a file
-    Profile.print(prof_file, format=:flat)"""
 end
 
 # If the newARGS variable is defined (i.e., the script is being run from the REPL),
@@ -914,6 +972,59 @@ else
     # NOTE: ARGS in Julia is a global variable that holds the command line arguments;
     localARGS = ARGS
 end
+
+# =======================================================================
+# USE THE FOLLOWING to see the effect of the code execution over a 
+# single / multiple processes
+@everywhere function print1000strings(t, print_out=false)
+    iter = 0
+    for _ in 1:100000
+        if print_out
+            print("Multiplication in thread $t\n")
+        end
+
+        # Make a big memory allocation (0.2GB)
+        _ = Array{Float64}(undef, 25_600_000)
+        # Create two matrices of random numbers of dimension 1000x1000
+        array1 = rand(1000, 10)
+        array2 = rand(1000, 10)
+        # Compute the scalar product of the two matrices
+        _ = array1' * array2
+        # println("Printing from thread $t: $scalar_product")
+        # println("Printing from thread $t")
+        # Append the scalar product to the list of scalar products
+        iter += 1 
+    end
+    
+    if !print_out
+        return [iter, 0.4, "a", Dict("a" => iter)]
+    end
+end
+
+function test(multi_process::Bool)
+    cum_value = 0
+    if multi_process
+        futures = []
+        for t in 1:max_process_index
+            future = @spawnat t print1000strings(t)
+            push!(futures, future)
+        end
+
+        for future in futures
+            x = fetch(future)
+            cum_value = Int(x[4]["a"]) + cum_value
+        end
+        print("Cumulative value: $cum_value\n")
+    else
+        for t in 1:max_process_index
+            print1000strings(t)
+        end
+    end
+end
+
+# @time test(true)
+# @time test(false)
+# =======================================================================
 
 # Call the main function to perform the experiment
 main()

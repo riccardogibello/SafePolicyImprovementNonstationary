@@ -21,7 +21,7 @@ rewards: Array to hold the rewards received at each step.
 # The BanditHistory struct is a subtype of the Any type, which is the root of the type hierarchy in Julia;
 # The BanditHistory struct has two type parameters, T and TA, which are used to specify the types of the 
 # elements in the actions and blogps arrays;
-struct BanditHistory{T,TA} <: Any where {T,TA}
+@everywhere struct BanditHistory{T,TA} <: Any where {T,TA}
     # Array to hold the actions taken at each step
     actions::Array{TA,1}
     
@@ -37,6 +37,16 @@ struct BanditHistory{T,TA} <: Any where {T,TA}
     function BanditHistory(::Type{T}, ::Type{TA}) where {T,TA}
         # Initialize the actions, blogps, and rewards arrays as empty arrays
         new{T,TA}(Array{TA,1}(), Array{T,1}(), Array{T,1}())
+    end
+end
+
+struct SafetyPerfRecord{T1, T2} <: Any where {T1,T2}
+    t::Array{T1,1}
+    Jpi::Array{T2,1}
+    Jsafe::Array{T2,1}
+
+    function SafetyPerfRecord(::Type{T1}, ::Type{T2}) where {T1,T2}
+        new{T1,T2}(Array{T1,1}(), Array{T2,1}(), Array{T2,1}())
     end
 end
 

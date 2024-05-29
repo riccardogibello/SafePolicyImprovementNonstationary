@@ -45,10 +45,12 @@ python ./run.py \
     -f bandit_swarm.jl \
     -o log_dir \
     -s 0 \
-    --speeds 0 \
-    --ids 1000 \
+    --speeds 2,3 \
+    --ids 2,3 \
     --trials 10 \
     --eps 2000
+    # eps must be 2000
+    # ids must be 1000
 
 # Check if the platform OS is Linux or macOS
 if [ "$PLATFORM_OS" == "Linux" ] || [ "$PLATFORM_OS" == "macOS" ]; then

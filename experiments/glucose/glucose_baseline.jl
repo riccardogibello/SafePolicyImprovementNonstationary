@@ -7,16 +7,16 @@ using ArgParse
 using Distributions
 
 
-include("normalpolicy.jl")
-include("softmaxpolicy.jl")
-include("history.jl")
-include("optimizers.jl")
-include("offpolicy.jl")
+include("../normalpolicy.jl")
+include("../softmaxpolicy.jl")
+include("../history.jl")
+include("../optimizers.jl")
+include("../offpolicy.jl")
 
-include("environments.jl")
+include("../environments.jl")
 include("glucose_env.jl")
-include("nonstationary_modeling.jl")
-include("nonstationary_pi.jl")
+include("../nonstationary_modeling.jl")
+include("../nonstationary_pi.jl")
 
 """
 This method is used in the Glucose experiment to collect data N timesteps

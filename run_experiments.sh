@@ -48,7 +48,26 @@ while (( "$#" )); do
         --ids)
             # Get the value given as an argument
             id_nums="$2"
-            ids=($(seq 1 $id_nums))
+            # Verify if the value contains a comma
+            if [[ $id_nums == *","* ]]; then
+                # If it does, split the value into an array
+                IFS=',' read -r -a ids <<< "$id_nums"
+                # Check that ids is of two elements
+                if [ ${#ids[@]} -ne 2 ]; then
+                    echo "Invalid number of values for ids. Expected 2, got ${#ids[@]}"
+                    exit 1
+                fi
+                # Set the first value to be the starting index
+                id_nums=${ids[0]}
+                # Set the second value to be the ending index
+                id_end=${ids[1]}
+                # Create an array with the values from the starting index to the ending index
+                ids=($(seq $id_nums $id_end))
+                echo "ids: ${ids[@]}"
+            else
+                # If it doesn't, create an array with the values from 1 to the given value
+                ids=($(seq 1 $id_nums))
+            fi
             shift # Remove argument name from processing
             shift # Remove argument value from processing
             ;;
@@ -99,8 +118,6 @@ if [ "$init" = true ]; then
     # Initialize the python environment variable, create and activate 
     # the julia environment, install the required packages
     julia --project=@. -e "
-        ENV[\"PYTHON\"] = \"${pythonexe}\"
-
         using Pkg; 
         Pkg.activate(\".\");
         Pkg.instantiate();
@@ -109,6 +126,9 @@ if [ "$init" = true ]; then
         Pkg.add(Pkg.PackageSpec(url=\"https://github.com/ScottJordan/EvaluationOfRLAlgs.git\"));
     "
 fi
+
+export PYTHON=pythonexe
+export JULIA_NUM_THREADS=16
 
 # For each speed in the list
 for speed in "${speeds[@]}"; do
