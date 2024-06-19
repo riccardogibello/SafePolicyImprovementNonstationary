@@ -29,5 +29,13 @@ RUN pip install --upgrade pip && \
 RUN chmod +x /usr/src/app/run_experiments.sh
 RUN chmod +x /usr/src/app/run_python.sh
 
+
+# Initialize PYTHONPATH environment variable
+ENV PYTHONPATH /usr/src/app
+
 # Set the default command to run the python script
 CMD ["python", "./run.py", "--init", "-f", "bandit_swarm.jl", "-o", "log_dir", "-s", "0", "--speeds", "2,3", "--ids", "2,3", "--trials", "10", "--eps", "2000"]
+
+# docker build -t my_experiment .
+# docker run -it --rm --name my_experiment my_experiment
+# WITH MOUNT (to:from): # docker run -it --rm -v ./from_docker:./log_var --name my_experiment my_experiment

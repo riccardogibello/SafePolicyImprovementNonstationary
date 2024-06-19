@@ -115,22 +115,29 @@ echo "Speeds: ${speeds[@]}"
 
 # Print current directory
 echo "Current directory: $(pwd)"
+#export JULIA_SSL_CA_ROOTS_PATH = ""
+#export PYTHON=
 
 # If the julia environment is not initialized
 if [ "$init" = true ]; then
     # Initialize the python environment variable, create and activate 
     # the julia environment, install the required packages
-    julia --project=@. -e  "
-        using Pkg; 
+    julia --project=@. -e "
+        using Pkg;
         Pkg.activate(\".\");
+        Pkg.add(Pkg.PackageSpec(url=\"https://github.com/ScottJordan/EvaluationOfRLAlgs.git\"));
+ 
+        Pkg.resolve();
+        Pkg.update();
         Pkg.instantiate();
+        
         Pkg.build(\"IJulia\");
         Pkg.build(\"PyCall\");
-        Pkg.add(Pkg.PackageSpec(url=\"https://github.com/ScottJordan/EvaluationOfRLAlgs.git\"));
     "
 fi
 
 #export PYTHON=pythonexe
+
 export JULIA_NUM_THREADS=16
 
 # For each speed in the list
