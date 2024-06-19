@@ -1,6 +1,16 @@
 # Use an official Python runtime as a parent image
 FROM python:3.9-slim
 
+# Set environment variables
+#ENV PYTHONUNBUFFERED=1 \
+#    VIRTUAL_ENV=/.venv
+
+# Create a virtual environment
+#RUN python -m venv $VIRTUAL_ENV
+
+# Make sure we use the virtualenv:
+#ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
 # Install required system packages and dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -10,10 +20,6 @@ RUN apt-get update && \
     git \
     jq && \
     rm -rf /var/lib/apt/lists/*
-
-
-#RUN apt-get install xdg-utils -y
-#RUN apt-get update && apt-get install -y xvfb
 
 # Install Julia
 RUN curl -fsSL https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-1.10.4-linux-x86_64.tar.gz | tar -xz -C /opt/ && \
@@ -25,21 +31,13 @@ WORKDIR /usr/src/app
 # Copy the current directory contents into the container # .dockerignore: Ignore foled .vscode, log_dir, .venv
 COPY . /usr/src/app
 
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
-
+# Install any needed packages specified in requirements.txt
+#RUN pip install --upgrade pip && \
+#    pip install -r requirements.txt
 
 # Make run_python.sh and run_experiments.sh executable
 RUN chmod +x /usr/src/app/run_experiments.sh
 RUN chmod +x /usr/src/app/run_python.sh
 
-
-# Initialize PYTHONPATH environment variable
-ENV PYTHONPATH /usr/src/app
-
-# Set the default command to run the python script
-CMD ["python", "./run.py", "--init", "-f", "bandit_swarm.jl", "-o", "log_dir", "-s", "0", "--speeds", "2,3", "--ids", "2,3", "--trials", "10", "--eps", "2000"]
-
-# docker build -t my_experiment .
-# docker run -it --rm --name my_experiment my_experiment
-# WITH MOUNT (to:from): # docker run -it --rm -v ./from_docker:./log_var --name my_experiment my_experiment
+# Set the default command to run the shell script
+CMD ["bash", "./run_python.sh", "Linux"]
