@@ -1,0 +1,4 @@
+# .dockerignore
+.vscode
+log_dir
+.venv

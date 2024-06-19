@@ -1,19 +1,23 @@
+from pathlib import Path
 import argparse
 import platform
 import subprocess
 import sys
+import os
 
 from codecarbon import OfflineEmissionsTracker
 import logging
 
 
 def tracked_function(
-        _command
+        _command,
+        _output_dir,
 ):
     tracker = OfflineEmissionsTracker(
         country_iso_code="ITA",
         measure_power_secs=30,
         project_name="safe_policy_experiment",
+        output_file=_output_dir / "emissions.csv",
     )
 
     # Create a dedicated logger (log name can be the CodeCarbon project name for example)
@@ -27,7 +31,8 @@ def tracked_function(
     )
 
     # Create file handler which logs debug messages
-    fh = logging.FileHandler("codecarbon.log")
+    os.makedirs(_output_dir, exist_ok=True)
+    fh = logging.FileHandler(_output_dir / "codecarbon.log")
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
     logger.addHandler(fh)
@@ -41,6 +46,7 @@ def tracked_function(
 
     tracker.start()
     try:
+        print(f"Running command: {_command}")
         subprocess.run(_command, check=True)
     finally:
         tracker.stop()
@@ -109,13 +115,13 @@ if __name__ == '__main__':
         help='The number of episodes for each trial.',
         required=True,
     )
-    parser.add_argument(
-        '--pythonexec',
-        metavar='PE',
-        type=str,
-        help='The python executable to be used.',
-        required=True,
-    )
+    #parser.add_argument(
+    #    '--pythonexec',
+    #    metavar='PE',
+    #    type=str,
+    #    help='The python executable to be used.',
+    #    required=True,
+    #)
 
     # Parse all the arguments
     args = parser.parse_args()
@@ -148,10 +154,11 @@ if __name__ == '__main__':
         "--ids", str(args.ids),
         "--trials", str(args.trials),
         "--eps", str(args.eps),
-        '--pythonexec', str(args.pythonexec),
+        #'--pythonexec', str(args.pythonexec),
     ])
 
     # Call the function that will be tracked
     tracked_function(
-        command
+        command,
+        Path(args.o)
     )

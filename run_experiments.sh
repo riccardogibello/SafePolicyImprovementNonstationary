@@ -81,12 +81,12 @@ while (( "$#" )); do
             shift # Remove argument name from processing
             shift # Remove argument value from processing
             ;;
-        --pythonexec)
-            pythonexe="$2"
-            ECHO "Python executable: $pythonexe"
-            shift # Remove argument name from processing
-            shift # Remove argument value from processing
-            ;;
+        #--pythonexec)
+        #    pythonexe="$2"
+        #    ECHO "Python executable: $pythonexe"
+        #    shift # Remove argument name from processing
+        #    shift # Remove argument value from processing
+        #    ;;
         *)
             echo "Invalid option: $arg" >&2
             exit 1
@@ -94,7 +94,8 @@ while (( "$#" )); do
     esac
 done
 
-juliaup update
+#echo "Updating the juliaup"
+#juliaup update
 
 # If the input file is not given
 if [ -z "$input_file" ]; then
@@ -103,7 +104,7 @@ if [ -z "$input_file" ]; then
 fi
 
 # If any of the required parameters are not given
-if [ -z "$log_dir" ] || [ -z "$seed" ] || [ -z "$speeds" ] || [ -z "$ids" ] || [ -z "$trials" ] || [ -z "$eps" ] || [ -z "$pythonexe" ]; then
+if [ -z "$log_dir" ] || [ -z "$seed" ] || [ -z "$speeds" ] || [ -z "$ids" ] || [ -z "$trials" ] || [ -z "$eps" ]; then #|| [ -z "$pythonexe" ]; then
     echo "Missing required parameters. Required: log_dir, seed, speeds, ids, trials, eps, pythonexe"
     exit 1
 fi
@@ -112,12 +113,14 @@ fi
 # Print the speeds
 echo "Speeds: ${speeds[@]}"
 
+# Print current directory
+echo "Current directory: $(pwd)"
 
 # If the julia environment is not initialized
 if [ "$init" = true ]; then
     # Initialize the python environment variable, create and activate 
     # the julia environment, install the required packages
-    julia --project=@. -e "
+    julia --project=@. -e  "
         using Pkg; 
         Pkg.activate(\".\");
         Pkg.instantiate();
@@ -127,14 +130,15 @@ if [ "$init" = true ]; then
     "
 fi
 
-export PYTHON=pythonexe
+#export PYTHON=pythonexe
 export JULIA_NUM_THREADS=16
 
 # For each speed in the list
 for speed in "${speeds[@]}"; do
     # For each experiment id in the list
     for id in "${ids[@]}"; do
-        julia --project=@. ./experiments/$input_file \
+        echo "Running experiment $id with speed $speed"
+        julia ./experiments/$input_file \
             --log-dir $log_dir \
             --id $id \
             --seed $seed \
