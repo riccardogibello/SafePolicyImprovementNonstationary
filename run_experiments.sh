@@ -1,11 +1,13 @@
 #!/bin/bash
 
+# If, during docker run command, you encounter errors related to the shell script syntax,
+# use this "dos2unix file_name"; 
+
 # Example of a script call:
 # ./run_experiments.sh -f bandit_swarm.jl -o log_dir -s 0 --speeds 0 --ids 10 --trials 10 --eps 500
 
 init=false
 input_file=""
-ids=()
 # This is a list that will contain the speeds at which 
 # the experiments will be run
 speeds=()
@@ -49,7 +51,7 @@ while (( "$#" )); do
             # Get the value given as an argument
             id_nums="$2"
             # Verify if the value contains a comma
-            if [[ $id_nums == *","* ]]; then
+            if [[ $id_nums = *","* ]]; then
                 # If it does, split the value into an array
                 IFS=',' read -r -a ids <<< "$id_nums"
                 # Check that ids is of two elements
@@ -81,21 +83,17 @@ while (( "$#" )); do
             shift # Remove argument name from processing
             shift # Remove argument value from processing
             ;;
-        #--pythonexec)
-        #    pythonexe="$2"
-        #    ECHO "Python executable: $pythonexe"
-        #    shift # Remove argument name from processing
-        #    shift # Remove argument value from processing
-        #    ;;
+        --pythonexec)
+            pythonexe="$2"
+            shift # Remove argument name from processing
+            shift # Remove argument value from processing
+            ;;
         *)
             echo "Invalid option: $arg" >&2
             exit 1
             ;;
     esac
 done
-
-#echo "Updating the juliaup"
-#juliaup update
 
 # If the input file is not given
 if [ -z "$input_file" ]; then
@@ -109,26 +107,17 @@ if [ -z "$log_dir" ] || [ -z "$seed" ] || [ -z "$speeds" ] || [ -z "$ids" ] || [
     exit 1
 fi
 
-
-# Print the speeds
-echo "Speeds: ${speeds[@]}"
-
-# Print current directory
-echo "Current directory: $(pwd)"
-#export JULIA_SSL_CA_ROOTS_PATH = ""
-export PYTHON="/usr/bin/python3"
-
 # If the julia environment is not initialized
-if [ "$init" = true ]; then
-    # Initialize the python environment variable, create and activate 
+if [ "$init" = "true" ]; then
+    echo Initializing the Julia environment
+    # Initialize the python environment variable (not sufficient
+    # the outside "export" command), create and activate 
     # the julia environment, install the required packages
     julia --project=@. -e "
-        ENV[\"PYTHON\"] = \"/usr/bin/python3\";
+        ENV[\"PYTHON\"] = \"$pythonexe\";
         using Pkg;
         Pkg.activate(\".\");
  
-        Pkg.resolve();
-        Pkg.update();
         Pkg.instantiate();
         
         Pkg.build(\"IJulia\");
@@ -137,8 +126,7 @@ if [ "$init" = true ]; then
     "
 fi
 
-#export PYTHON=pythonexe
-
+export PYTHON=pythonexe
 export JULIA_NUM_THREADS=16
 
 # For each speed in the list
@@ -146,7 +134,7 @@ for speed in "${speeds[@]}"; do
     # For each experiment id in the list
     for id in "${ids[@]}"; do
         echo "Running experiment $id with speed $speed"
-        julia ./experiments/$input_file \
+        julia --project=@. ./experiments/$input_file \
             --log-dir $log_dir \
             --id $id \
             --seed $seed \

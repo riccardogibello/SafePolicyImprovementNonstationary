@@ -1,18 +1,17 @@
 using Statistics
-using EvaluationOfRLAlgs
 using Random
 using DataFrames
 using CSV
 using ArgParse
 using Distributions
 using Plots
-using Profile
-using ProfileView
 using Base.Threads
 using Distributed
 
 using Logging
 Logging.global_logger(SimpleLogger(stderr, Logging.Error))
+
+using EvaluationOfRLAlgs
 
 # Set the number of processes to be used in the experiment
 max_processes = 10
@@ -950,9 +949,6 @@ function main()
     # For each of them, run the simulation for the given number
     # of trials ("num_episodes" each), saving the results in the given directory
     # Initialize the profiler with a larger buffer and/or larger delay
-    # Buffer size = 10 million, delay = 0.01 seconds
-    # Profile.init(n = 10^7, delay = 0.01)
-    # ProfileView.@profview runsweep(
     runsweep(
         seed, 
         save_dir, 

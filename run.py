@@ -53,6 +53,7 @@ def tracked_function(
 
 
 if __name__ == '__main__':
+    print(os.listdir())
     # Take all the parameters given as input
     parser = argparse.ArgumentParser(description="Process some integers.")
 
@@ -115,13 +116,13 @@ if __name__ == '__main__':
         help='The number of episodes for each trial.',
         required=True,
     )
-    #parser.add_argument(
-    #    '--pythonexec',
-    #    metavar='PE',
-    #    type=str,
-    #    help='The python executable to be used.',
-    #    required=True,
-    #)
+    parser.add_argument(
+        '--pythonexec',
+        metavar='PE',
+        type=str,
+        help='The python executable to be used.',
+        required=True,
+    )
 
     # Parse all the arguments
     args = parser.parse_args()
@@ -138,11 +139,12 @@ if __name__ == '__main__':
     if os_name == 'Windows':
         command = [
             "sh",
-            "./run_experiments.sh",
+            "run_experiments.sh",
         ]
     else:
         command = [
-            "./run_experiments.sh",
+            "bash",
+            "run_experiments.sh",
         ]
 
     command.extend([
@@ -154,7 +156,7 @@ if __name__ == '__main__':
         "--ids", str(args.ids),
         "--trials", str(args.trials),
         "--eps", str(args.eps),
-        #'--pythonexec', str(args.pythonexec),
+        '--pythonexec', str(args.pythonexec),
     ])
 
     # Call the function that will be tracked
