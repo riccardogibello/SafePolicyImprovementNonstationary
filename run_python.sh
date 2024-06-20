@@ -19,10 +19,10 @@ if [ "$PLATFORM_OS" = "Docker" ]; then
         -f bandit_swarm.jl \
         -o log_dir \
         -s 0 \
-        --speeds 2,3 \
-        --ids 2,3 \
+        --speeds 0,1,2,3 \
+        --ids 1000 \
         --trials 10 \
-        --eps 10
+        --eps 2000
         # eps must be 2000
         # ids must be 1000
 else
