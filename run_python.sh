@@ -63,12 +63,15 @@ else
         -f bandit_swarm.jl \
         -o log_dir \
         -s 0 \
-        --speeds 2,3 \
-        --ids 2,3 \
+        --speeds 0,1,2,3 \
+        --ids 1000 \
         --trials 10 \
-        --eps 10
-        # eps must be 2000
-        # ids must be 1000
+        --eps 2000
+        # As stated in the paper, the values are:
+        # eps: 2000
+        # ids: 1000
+        # speeds: 0,1,2,3
+        # trials: 10
 fi
 
 # Check if the platform OS is Linux or macOS or Windows
