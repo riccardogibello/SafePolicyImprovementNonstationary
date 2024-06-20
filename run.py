@@ -30,29 +30,34 @@ def tracked_function(
         output_file=_output_dir / "emissions.csv",
     )
 
+    
+    # Set to True to enable logging
+    USE_LOGGER = False
+    
     # Create a dedicated logger (log name can be the CodeCarbon project name for example)
-    logger = logging.getLogger('codecarbon')
-    while logger.hasHandlers():
-        logger.removeHandler(logger.handlers[0])
+    if USE_LOGGER:
+        logger = logging.getLogger('codecarbon')
+        while logger.hasHandlers():
+            logger.removeHandler(logger.handlers[0])
 
-    # Define a log formatter
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)-12s: %(levelname)-8s %(message)s"
-    )
+        # Define a log formatter
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)-12s: %(levelname)-8s %(message)s"
+        )
 
-    # Create file handler which logs debug messages
-    os.makedirs(_output_dir, exist_ok=True)
-    fh = logging.FileHandler(_output_dir / "codecarbon.log")
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
+        # Create file handler which logs debug messages
+        os.makedirs(_output_dir, exist_ok=True)
+        fh = logging.FileHandler(_output_dir / "codecarbon.log")
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
 
-    consoleHandler = logging.StreamHandler(sys.stdout)
-    consoleHandler.setFormatter(formatter)
-    consoleHandler.setLevel(logging.WARNING)
-    logger.addHandler(consoleHandler)
+        consoleHandler = logging.StreamHandler(sys.stdout)
+        consoleHandler.setFormatter(formatter)
+        consoleHandler.setLevel(logging.WARNING)
+        logger.addHandler(consoleHandler)
 
-    logger.debug("GO!")
+        logger.debug("GO!")
 
     tracker.start()
     
