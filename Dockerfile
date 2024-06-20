@@ -116,18 +116,7 @@ RUN set -eux; \
 # Run the run_python.sh script
 CMD [ "sh", "run_python.sh", "Docker"]
 
-#CMD [ \
-#    "python3", \
-#    "./run.py", \
-#    "--init", \
-#    "-f", "bandit_swarm.jl", \
-#    "-o", "log_dir", \
-#    "-s", "0", \
-#    "--speeds", "0,1,2,3", \
-#    "--ids", "1000", \
-#    "--trials", "10", \
-#    "--eps", "2000"\
-#]
-
-# docker build -f Dockerfile -t rl_project_bandit .
-# docker run --rm -it rl_project_bandit
+# HOWTO:
+# 1) Create a volume: docker volume create rl_recsys_volume
+# 2) Build the image: docker build -f Dockerfile -t rl_project_recsys .
+# 3) Run the container with mounted volume: docker run --name rl_recsys_cont --rm -it -v rl_recsys_volume:/usr/src/app/log_dir rl_project_recsys

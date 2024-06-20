@@ -22,7 +22,7 @@ if [ "$PLATFORM_OS" = "Docker" ]; then
         --speeds 2,3 \
         --ids 2,3 \
         --trials 10 \
-        --eps 2000
+        --eps 10
         # eps must be 2000
         # ids must be 1000
 else
@@ -66,7 +66,7 @@ else
         --speeds 2,3 \
         --ids 2,3 \
         --trials 10 \
-        --eps 2000
+        --eps 10
         # eps must be 2000
         # ids must be 1000
 fi

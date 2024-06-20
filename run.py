@@ -9,13 +9,23 @@ from codecarbon import OfflineEmissionsTracker
 import logging
 
 
+import threading
+import time
+
+def flush_tracker_periodically(tracker, interval):
+    while True:
+        tracker.flush()  # Flush method call
+        time.sleep(interval)  # Sleep for 'interval' seconds
+
+
 def tracked_function(
         _command,
         _output_dir,
+        _interval
 ):
     tracker = OfflineEmissionsTracker(
         country_iso_code="ITA",
-        measure_power_secs=30,
+        measure_power_secs=_interval,
         project_name="safe_policy_experiment",
         output_file=_output_dir / "emissions.csv",
     )
@@ -45,6 +55,13 @@ def tracked_function(
     logger.debug("GO!")
 
     tracker.start()
+    
+    # Start a thread for periodic flushing
+    flush_thread = threading.Thread(target=flush_tracker_periodically, args=(tracker, _interval, ))
+    flush_thread.daemon = True  # Daemonize the thread so it exits when the main thread exits
+    flush_thread.start()
+    
+    
     try:
         print(f"Running command: {_command}")
         subprocess.run(_command, check=True)
@@ -159,8 +176,12 @@ if __name__ == '__main__':
         '--pythonexec', str(args.pythonexec),
     ])
 
+    # Log and flush every 2 minutes
+    interval = 60*2  
+    
     # Call the function that will be tracked
     tracked_function(
         command,
-        Path(args.o)
+        Path(args.o),
+        interval
     )
