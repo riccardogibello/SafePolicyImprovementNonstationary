@@ -69,4 +69,14 @@ CMD [ "sh", "run_python.sh", "Docker"]
 # HOWTO:
 # 1) Create a volume: docker volume create rl_recsys_volume
 # 2) Build the image: docker build -f Dockerfile -t rl_project_recsys .
-# 3) Run the container with mounted volume: docker run --name rl_recsys_cont --rm -it -v rl_recsys_volume:/usr/src/app/log_dir rl_project_recsys
+# 3) Run the container with mounted volume: docker run -d --name rl_recsys_cont --rm -it -v rl_recsys_volume:/usr/src/app/log_dir rl_project_recsys
+
+# IF YOU WANT TO RUN 2 CONTAINERS IN PARALLEL:
+# 1) Create a volume: docker volume create rl_recsys_volume
+# 2) Modify the 'rune_experiments.sh' script to run speeds 0,1
+# 3) Build the image: docker build -f Dockerfile -t rl_speed_01 .
+# 4) Modify the 'rune_experiments.sh' script to run speeds 2,3
+# 5) Build the image: docker build -f Dockerfile -t rl_speed_23 .
+# 6) Run the container with mounted volume: docker run -d --name rl_speed_01_cont --rm -it -v rl_recsys_volume:/usr/src/app/log_dir rl_speed_01
+# 7) Run the container with mounted volume: docker run -d --name rl_speed_23_cont --rm -it -v rl_recsys_volume:/usr/src/app/log_dir rl_speed_23
+
