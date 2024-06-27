@@ -119,9 +119,15 @@ end
 
 
 """
-This is used in the RecSys experiment.
+This is the method used to evaluate a given policy in the RecSys experiment.
 
+b:  the bandit parameters (e.g., the policy action parameters, their standard deviations,
+    the parameters modeling the seasonality change of the returns for each action).
+p:  the policy to be evaluated (e.g., the probabilities of taking each action in the bandit problem
+    at a given timestep t).
 
+The method returns the expected return of the policy p at the current timestep t, based on the given returns
+of the actions for the provided timestep.
 """
 function eval_policy(
     b::NonStationaryDiscreteBanditParams{T}, 

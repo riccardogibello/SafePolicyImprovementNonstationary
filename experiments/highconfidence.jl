@@ -72,7 +72,6 @@ end
 """
     HICOPI(D, sample_fn!, optimize_fn, confidence_test, π, πsafe, τ, δ)
 
-TODO update this description
 This is a high confidence off-policy policy improvement function that
 performs a single iteration of collecting τ data samples with policy π,
 finding a canditate policy, πc, and then checking to see if πc is
