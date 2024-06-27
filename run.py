@@ -23,6 +23,10 @@ def tracked_function(
         _output_dir,
         _interval
 ):
+    # Create the output directory, if it does not exist
+    if not os.path.exists(_output_dir):
+        os.makedirs(_output_dir)
+
     tracker = OfflineEmissionsTracker(
         country_iso_code="ITA",
         measure_power_secs=_interval,
@@ -84,6 +88,12 @@ if __name__ == '__main__':
         '--init',
         action='store_true',
         help='Initialize the julia environment',
+    )
+    parser.add_argument(
+        '--n-proc',
+        type=int,
+        help='The number of processors to be used.',
+        default=1,
     )
     parser.add_argument(
         '-f',
@@ -154,7 +164,6 @@ if __name__ == '__main__':
     speeds_str = ','.join([str(speed) for speed in speeds.split(',')])
     # Call the shell script with the given arguments
     # Define the command as a list
-    print(str(args.trials))
     # Get the OS name
     os_name = platform.system()
     # If the OS is Windows
@@ -168,9 +177,10 @@ if __name__ == '__main__':
             "bash",
             "run_experiments.sh",
         ]
-
+    
     command.extend([
         "--init",
+        "--n-proc", str(args.n_proc),
         "-f", str(args.f),
         "-o", str(args.o),
         "-s", str(args.s),

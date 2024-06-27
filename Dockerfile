@@ -63,10 +63,36 @@ ENV PATH="$JULIA_PATH/bin:$PATH"
 # Smoke test
 RUN julia --version
 
-# Run the run_python.sh script
-CMD [ "sh", "run_python.sh", "Docker"]
+# Make sure entrypoint.sh is executable
+RUN chmod +x /usr/src/app/entrypoint.sh
 
-# HOWTO:
+# Set the entrypoint script
+ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
+
+# Set default arguments for the entrypoint script,
+# which represent the number of processes to run in parallel
+# and the identifiers of the experiments to run.
+CMD ["10", "1,1000"]
+
+# HOW-TO:
+# 1) Create a volume: 
+# 		docker volume create rl_recsys_volume
+# 2) Build the image: 
+#		docker build -f Dockerfile -t rl_project_recsys .
+# 3) Run the container with mounted volume: 
+#		docker run -d --name rl_recsys_cont --rm -it -v rl_recsys_volume:/usr/src/app/log_dir rl_project_recsys
+# 4) To export the files created in the volume:
+#    	docker cp [container_name/ID]:[mounted_container_path] [local_path]
+#       e.g., mkdir exported_docker_volume && docker cp rl_recsys_cont:/usr/src/app/log_dir/ ./exported_docker_volume
+# 5) To stop the container: 
+# 		docker stop rl_recsys_cont
+
+# IF YOU WANT TO RUN 2 CONTAINERS IN PARALLEL:
 # 1) Create a volume: docker volume create rl_recsys_volume
-# 2) Build the image: docker build -f Dockerfile -t rl_project_recsys .
-# 3) Run the container with mounted volume: docker run --name rl_recsys_cont --rm -it -v rl_recsys_volume:/usr/src/app/log_dir rl_project_recsys
+# 2) Modify the 'run_experiments.sh' script to run speeds 0,1
+# 3) Build the image: docker build -f Dockerfile -t rl_speed_01 .
+# 4) Modify the 'run_experiments.sh' script to run speeds 2,3
+# 5) Build the image: docker build -f Dockerfile -t rl_speed_23 .
+# 6) Run the container with mounted volume: docker run -d --name rl_speed_01_cont --rm -it -v rl_recsys_volume:/usr/src/app/log_dir rl_speed_01
+# 7) Run the container with mounted volume: docker run -d --name rl_speed_23_cont --rm -it -v rl_recsys_volume:/usr/src/app/log_dir rl_speed_23
+
